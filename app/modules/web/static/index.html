@@ -9,50 +9,62 @@
 <body>
   <header>
     <div class="brand">
-      <span class="dot" id="conn-dot"></span>
+      <span class="led" id="conn-led"></span>
       <h1>Voice&#8209;of&#8209;Customer Factory</h1>
+      <span class="session" id="session-label">standby</span>
     </div>
     <div class="counters">
-      <div class="counter"><b id="c-segments">0</b><span>segments</span></div>
+      <div class="counter"><b id="c-segments">0</b><span>spoken</span></div>
       <div class="counter"><b id="c-ideas">0</b><span>ideas</span></div>
-      <div class="counter"><b id="c-revs">0</b><span>PRD revs</span></div>
+      <div class="counter"><b id="c-revs">0</b><span>revisions</span></div>
       <div class="counter"><b id="c-sources">0</b><span>sources</span></div>
       <div class="counter"><b id="c-agents">0</b><span>agents</span></div>
     </div>
   </header>
 
+  <nav class="chain" aria-label="Pipeline stages">
+    <span class="node" data-stage="listen"><i></i>listen</span><span class="wire"></span>
+    <span class="node" data-stage="extract"><i></i>extract</span><span class="wire"></span>
+    <span class="node" data-stage="prd"><i></i>prd</span><span class="wire"></span>
+    <span class="node" data-stage="research"><i></i>research<em>bright data</em></span><span class="wire"></span>
+    <span class="node" data-stage="factory"><i></i>factory<em>port</em></span><span class="wire"></span>
+    <span class="node" data-stage="loop"><i></i>loop<em>signoz</em></span>
+  </nav>
+
   <main>
-    <section class="pane" id="pane-transcript">
-      <h2>Transcript <span class="sub" id="session-label">waiting for meeting…</span></h2>
-      <div class="scroll" id="transcript">
-        <p class="empty">Nothing spoken yet.</p>
-      </div>
-    </section>
-
-    <section class="pane wide" id="pane-prd">
-      <h2>Living PRD <span class="sub" id="prd-rev"></span></h2>
-      <div class="scroll" id="prd">
-        <p class="empty">The PRD builds itself as the meeting unfolds.<br><small>Stage 2</small></p>
-      </div>
-    </section>
-
-    <div class="rail">
-      <section class="pane" id="pane-enrich">
-        <h2>Market Research</h2>
-        <div class="scroll" id="enrichment">
-          <p class="empty">Bright Data findings appear here.<br><small>Stage 3</small></p>
+    <div class="col col-in">
+      <section class="pane" data-pane="listen">
+        <h2>Transcript <span class="sub">the meeting</span></h2>
+        <div class="scroll" id="transcript">
+          <p class="empty">Nothing spoken yet.</p>
         </div>
       </section>
 
-      <section class="pane" id="pane-factory">
-        <h2>Software Factory <span class="sub">Port</span></h2>
+      <section class="pane pane-short" data-pane="research">
+        <h2>Market Research <span class="sub">bright data</span></h2>
+        <div class="scroll" id="enrichment">
+          <p class="empty">Live search findings land here.</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="pane hero" data-pane="prd">
+      <h2>Living PRD <span class="sub" id="prd-rev">awaiting first revision</span></h2>
+      <div class="scroll" id="prd">
+        <p class="empty">The document writes itself as the meeting unfolds.</p>
+      </div>
+    </section>
+
+    <div class="col col-out">
+      <section class="pane" data-pane="factory">
+        <h2>Software Factory <span class="sub">port</span></h2>
         <div class="scroll" id="factory">
           <p class="empty">Agents are staffed from the PRD.</p>
         </div>
       </section>
 
-      <section class="pane" id="pane-loop">
-        <h2>Agent Loop <span class="sub">SigNoz</span></h2>
+      <section class="pane" data-pane="loop">
+        <h2>Agent Loop <span class="sub">signoz</span></h2>
         <div class="scroll" id="loop">
           <p class="empty">Alerts triage themselves to an agent.</p>
         </div>
@@ -61,7 +73,7 @@
   </main>
 
   <footer>
-    <span class="tick-label">events</span>
+    <span class="tick-label">bus</span>
     <div id="ticker"></div>
   </footer>
 

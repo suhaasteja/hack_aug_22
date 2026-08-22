@@ -120,11 +120,18 @@ class PortClient:
                 if line.startswith("event:"):
                     event_name = line[6:].strip()
                 elif line.startswith("data:"):
-                    data = line[5:].strip()
+                    # SSE strips exactly one space after the colon, and Port
+                    # streams one token per event — stripping all whitespace
+                    # here runs the reply's words together.
+                    data = line[5:]
+                    if data.startswith(" "):
+                        data = data[1:]
                     if event_name == "execution":
-                        chunks.append(data)
+                        # SSE cannot carry raw newlines either, so restore the
+                        # escaped ones or the reply arrives as one long line.
+                        chunks.append(data.replace("\\n", "\n").replace("\\t", "\t"))
                     elif event_name == "invocationIdentifier":
-                        invocation_id = data
+                        invocation_id = data.strip()
                     elif event_name == "done":
                         finished = True
 

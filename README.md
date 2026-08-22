@@ -4,12 +4,35 @@ A robot listens to your sales meeting and turns the conversation into a living P
 
 **Spoken idea → PRD → product, fully observable.**
 
-See [PLAN.md](PLAN.md) for architecture and staged build plan.
+Someone says *"scratch the mobile app"* and the PRD rewrites itself, the mobile
+engineer is retired from the crew, and a trace in SigNoz connects that sentence
+to the agents it changed.
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together, with a diagram
+- **[DEMO.md](DEMO.md)** — the 3-minute demo runbook
+- **[PLAN.md](PLAN.md)** — the staged build plan
 
 ## Stack
 
-- **Transcription:** streaming speech-to-text (mic)
-- **PRD generation:** Claude API
-- **Research enrichment:** Bright Data MCP
-- **Software factory:** Port (blueprints, entities, self-service actions)
-- **Observability:** self-hosted SigNoz (OTel traces/logs/metrics)
+| | |
+|---|---|
+| Transcript | driver-based (`synthetic` replay now, Reachy robot later) |
+| Ideas + PRD | Gemini `gemini-3.7-flash`, structured output |
+| Market research | Bright Data MCP, live search with citation validation |
+| Software factory | Port — `_ai_agent` entities, real invokable agents |
+| Observability | self-hosted SigNoz — OTLP traces, metrics, logs, alerts |
+| Closed loop | SigNoz alert → context → Gemini triage → Port agent → chained agent |
+
+## Run it
+
+```bash
+make setup
+make run          # dashboard on http://localhost:7000
+make test
+```
+
+Needs `GEMINI_API_KEY`, `BRIGHTDATA_API_TOKEN`, `PORT_CLIENT_ID`,
+`PORT_CLIENT_SECRET`, `SIGNOZ_API_KEY` in the environment, and SigNoz running
+locally (`~/signoz-selfhost`, `foundryctl cast -f casting.yaml`).
+
+Every module is toggled by one line in `config.yaml`.
