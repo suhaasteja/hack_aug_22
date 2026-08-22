@@ -271,6 +271,15 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     session_id = config.get("session", {}).get("id", "session")
     prd_id = f"voc_prd_{session_id}"
 
+    # Re-deriving the crew costs a model call plus a dozen catalog writes. In a
+    # live meeting the PRD revises every few seconds, and the crew rarely
+    # changes that fast, so skip revisions that moved nothing structural.
+    restaff = {
+        "min_revs": int(module_config.get("restaff_min_revs", 1)),
+        "last_rev": -99,
+        "last_shape": None,
+    }
+
     gate = {
         "built_shape": None,           # PRD shape as of the last dispatch
         "dispatches": 0,
@@ -292,11 +301,22 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
                     "voc.session_id": session_id,
                 },
             ) as s:
-                stop = await _handle_revision(
-                    bus, port, config, event, crew, session_id, prd_id, s
+                rev_now = event.payload["rev"]
+                shape_now = _shape(event.payload["doc"])
+                fresh = (
+                    rev_now - restaff["last_rev"] >= restaff["min_revs"]
+                    and shape_now != restaff["last_shape"]
                 )
-                if stop:
-                    return
+                if fresh:
+                    restaff["last_rev"] = rev_now
+                    restaff["last_shape"] = shape_now
+                    stop = await _handle_revision(
+                        bus, port, config, event, crew, session_id, prd_id, s
+                    )
+                    if stop:
+                        return
+                else:
+                    s.set_attribute("voc.restaff.skipped", True)
                 if gate["enabled"]:
                     await _maybe_dispatch_build(bus, port, config, event, crew, gate)
     finally:

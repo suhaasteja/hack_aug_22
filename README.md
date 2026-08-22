@@ -10,6 +10,7 @@ to the agents it changed.
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — how it fits together, with a diagram
 - **[DEMO.md](DEMO.md)** — the 3-minute demo runbook
+- **[ROBOT.md](ROBOT.md)** — connecting the robot, and testing that path without one
 - **[EXAMPLE.md](EXAMPLE.md)** — a second meeting traced through every stage, with real outputs
 - **[PLAN.md](PLAN.md)** — the staged build plan
 

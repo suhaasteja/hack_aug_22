@@ -68,70 +68,104 @@ def _render_known(known: dict[str, dict[str, Any]]) -> str:
 
 
 async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, Any]) -> None:
+    """Extract on a timer rather than per-utterance.
+
+    A live transcriber emits whenever someone speaks — bursts during a heated
+    exchange, nothing during a pause. Firing per-utterance would spend a model
+    call on "mm-hm" and several during one sentence, so extraction runs on an
+    interval and only when enough new speech has actually accumulated.
+    """
     window_size = int(module_config.get("window_size", 8))
-    stride = int(module_config.get("stride", 4))
+    interval = float(module_config.get("interval_seconds", 15))
+    min_new = int(module_config.get("min_new_segments", 2))
 
     segments: list[dict[str, Any]] = []
     known: dict[str, dict[str, Any]] = {}
     pending = 0
+    latest_ctx: dict[str, str] = {}
 
-    log.info("extracting every %d segments over a %d-segment window", stride, window_size)
+    log.info(
+        "extracting every %.0fs when at least %d new segments have arrived (window %d)",
+        interval, min_new, window_size,
+    )
 
-    async for event in bus.stream({EventType.TRANSCRIPT_SEGMENT}):
-        segments.append(event.payload)
-        pending += 1
-        if pending < stride:
-            continue
-        pending = 0
+    async def collect() -> None:
+        nonlocal pending
+        async for event in bus.stream({EventType.TRANSCRIPT_SEGMENT}):
+            segments.append(event.payload)
+            pending += 1
+            latest_ctx.clear()
+            latest_ctx.update(event.trace_context)
 
-        window = segments[-window_size:]
-        prompt = (
-            f"Known ideas so far:\n{_render_known(known)}\n\n"
-            f"New excerpt from the call:\n{_render_window(window)}"
-        )
-
-        with obs.span(
-            "extract.window",
-            parent=event.trace_context,
-            attributes={
-                "voc.window.size": len(window),
-                "voc.window.end_seq": len(segments) - 1,
-                "voc.known_ideas": len(known),
-            },
-        ) as s:
-            try:
-                result = await generate_json(
-                    prompt=prompt, schema=Extraction, system=SYSTEM, config=config
-                )
-            except LLMUnavailable as e:
-                log.error("%s — extract disabled for this session", e)
-                return
-            except Exception as e:  # noqa: BLE001 - a bad window must not kill the pipeline
-                obs.record_error("extract", "generate", e)
-                log.warning("extraction failed on window ending at seg %d: %s", len(segments), e)
+    async def tick() -> None:
+        nonlocal pending
+        while True:
+            await asyncio.sleep(interval)
+            if pending < min_new:
                 continue
+            pending = 0
+            await extract_window(
+                bus, config, segments[-window_size:], known, dict(latest_ctx), len(segments)
+            )
 
-            emitted = 0
-            for idea in result.ideas:
-                payload = idea.model_dump()
-                prior = known.get(idea.idea_id)
-                if prior == payload:
-                    continue  # model restated something unchanged
-                known[idea.idea_id] = payload
-                verb = "updated" if prior else "new"
-                emitted += 1
-                log.info("%s idea [%s/%s] %s", verb, idea.kind, idea.status, idea.title)
-                obs.count(
-                    obs.ideas_counter,
-                    kind=idea.kind,
-                    status=idea.status,
-                    is_update=prior is not None,
+    await asyncio.gather(collect(), tick())
+
+
+async def extract_window(
+    bus: EventBus,
+    config: dict[str, Any],
+    window: list[dict[str, Any]],
+    known: dict[str, dict[str, Any]],
+    parent: dict[str, str],
+    total: int,
+) -> None:
+    prompt = (
+        f"Known ideas so far:\n{_render_known(known)}\n\n"
+        f"New excerpt from the call:\n{_render_window(window)}"
+    )
+
+    with obs.span(
+        "extract.window",
+        parent=parent,
+        attributes={
+            "voc.window.size": len(window),
+            "voc.window.end_seq": total - 1,
+            "voc.known_ideas": len(known),
+        },
+    ) as s:
+        try:
+            result = await generate_json(
+                prompt=prompt, schema=Extraction, system=SYSTEM, config=config
+            )
+        except LLMUnavailable as e:
+            log.error("%s — extract disabled for this session", e)
+            raise
+        except Exception as e:  # noqa: BLE001 - a bad window must not kill the pipeline
+            obs.record_error("extract", "generate", e)
+            log.warning("extraction failed on window ending at seg %d: %s", total, e)
+            return
+
+        emitted = 0
+        for idea in result.ideas:
+            payload = idea.model_dump()
+            prior = known.get(idea.idea_id)
+            if prior == payload:
+                continue  # model restated something unchanged
+            known[idea.idea_id] = payload
+            verb = "updated" if prior else "new"
+            emitted += 1
+            log.info("%s idea [%s/%s] %s", verb, idea.kind, idea.status, idea.title)
+            obs.count(
+                obs.ideas_counter,
+                kind=idea.kind,
+                status=idea.status,
+                is_update=prior is not None,
+            )
+            await bus.publish(
+                Event(
+                    type=EventType.IDEA_DETECTED,
+                    payload={**payload, "is_update": prior is not None},
+                    trace_context=obs.inject(),
                 )
-                await bus.publish(
-                    Event(
-                        type=EventType.IDEA_DETECTED,
-                        payload={**payload, "is_update": prior is not None},
-                        trace_context=obs.inject(),
-                    )
-                )
-            s.set_attribute("voc.ideas.emitted", emitted)
+            )
+        s.set_attribute("voc.ideas.emitted", emitted)

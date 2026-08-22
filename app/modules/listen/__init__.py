@@ -12,7 +12,11 @@ from typing import Any
 
 from app.bus import EventBus
 
-DRIVERS = {"synthetic": "app.modules.listen.synthetic"}
+DRIVERS = {
+    "synthetic": "app.modules.listen.synthetic",
+    # What a real transcriber posts into. The robot will use this one.
+    "http": "app.modules.listen.http_ingest",
+}
 
 
 async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, Any]) -> None:

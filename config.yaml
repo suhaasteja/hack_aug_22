@@ -17,8 +17,12 @@ observability:
 modules:
   listen:
     enabled: true
-    driver: synthetic          # synthetic | reachy (later) | mic (later)
+    # synthetic = scripted replay; http = what a real transcriber posts into.
+    # Switch to http for the robot; nothing downstream changes.
+    driver: synthetic
     script: app/modules/listen/data/sales_meeting.jsonl
+    host: 0.0.0.0            # http driver only
+    port: 7003               # http driver only
   web:
     enabled: true
     host: 127.0.0.1
@@ -26,10 +30,13 @@ modules:
   extract:
     enabled: true
     window_size: 8             # segments of context per extraction
-    stride: 4                  # run an extraction every N segments
+    # Extraction runs on a clock, not per-utterance: a live transcriber bursts
+    # while people talk and goes quiet while they think.
+    interval_seconds: 15
+    min_new_segments: 2        # don't spend a call on a single "mm-hm"
   prd:
     enabled: true
-    debounce_seconds: 2.5      # one revision per burst of ideas
+    debounce_seconds: 2.5      # one revision per burst of ideas (raise to ~20 live)
   enrich:
     enabled: true
     max_queries: 4             # cap live searches per meeting
@@ -38,6 +45,7 @@ modules:
     # Agents are invoked to build only when the PRD has materially moved. Each
     # dispatch spends one of a finite monthly Port agent invocation quota.
     dispatch_builds: true
+    restaff_min_revs: 1        # re-derive the crew at most every N revisions
     dispatch_after_rev: 3      # let the PRD form before the first build
     dispatch_min_revs: 2       # revisions to wait between builds
     dispatch_min_delta: 2      # tracked PRD items that must change first
