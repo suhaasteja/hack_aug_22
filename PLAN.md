@@ -40,7 +40,8 @@ The system is an event-driven pipeline of independent modules. Every module:
 
 | Module | Responsibility | Consumes | Produces |
 |---|---|---|---|
-| `listen` | Mic capture + streaming speech-to-text | audio | `transcript.segment` |
+| `listen` | Driver-based transcript source: `synthetic` (scripted meeting replay) now, `reachy`/mic later | audio / script | `transcript.segment` |
+| `web` | Live dashboard: rolling transcript, rendered PRD, enrichment feed, Port build status, event ticker | all events (read-only) | — |
 | `extract` | LLM pulls product ideas/requirements/decisions from transcript windows | `transcript.segment` | `idea.detected` |
 | `prd` | Maintains the living PRD document; rewrites sections as ideas evolve | `idea.detected`, `enrichment.found` | `prd.updated` |
 | `enrich` | Bright Data web research: competitors, prior art, market context per idea | `idea.detected` | `enrichment.found` |
@@ -67,12 +68,14 @@ Repo scaffold: module directories, event schemas, event bus, config loading (API
 - `pytest` passes on bus publish/subscribe round-trip test
 - Toggling a module in `config.yaml` enables/disables it (modularity proof)
 
-### Stage 1 — Listen (mic → live transcript)
-Streaming speech-to-text from the laptop mic. Publishes `transcript.segment` events with speaker-agnostic text + timestamps. Console view tails the transcript live.
+### Stage 1 — Listen (synthetic driver) + web dashboard
+`listen` module with a driver interface. First driver is `synthetic`: replays a scripted multi-speaker sales meeting (with realistic timing and an evolving/contradicting idea arc) as `transcript.segment` events. The `reachy` (robot) and mic drivers plug in later behind the same interface. Alongside it, the `web` module ships early: a FastAPI + WebSocket dashboard showing the rolling transcript and pipeline event ticker (PRD/enrichment/factory panes light up as later stages land).
 
 **✅ Verify:**
-- Speak into the mic; transcript lines appear in the console within ~2s
+- `make run` replays the synthetic meeting; transcript lines stream in the console
+- Open `http://localhost:7000` — transcript scrolls live in the browser
 - `transcripts/session-<ts>.jsonl` accumulates segments on disk
+- Switching `listen.driver` in `config.yaml` between `synthetic` and an unimplemented driver fails loudly with a clear message (driver interface proof)
 
 ### Stage 2 — Extract + living PRD
 LLM (Claude API) watches a sliding window of transcript segments, emits `idea.detected` events (feature, requirement, constraint, decision, open question). The `prd` module folds ideas into a sectioned PRD (Problem, Users, Features, Requirements, Open Questions, ...) and rewrites it as the conversation evolves.
@@ -106,7 +109,7 @@ OTel tracing/logging/metrics in every module, exported to the local SigNoz (OTLP
 - Killing the mic feed fires the "pipeline stalled" alert
 
 ### Stage 6 — Demo polish
-Single live view (terminal UI or minimal web page): left = rolling transcript, right = live-rendering PRD, status bar = pipeline events. Scripted 3-minute demo path.
+Design pass on the web dashboard (it exists since Stage 1): left = rolling transcript, right = live-rendering PRD, enrichment citations, Port build card linking to the catalog entity and scaffolded repo, status bar = pipeline events. Scripted 3-minute demo path.
 
 **✅ Verify:**
 - Full run-through: speak → PRD forms on screen → enrichment links appear → Port entity updates → SigNoz trace shown, no manual intervention
@@ -119,6 +122,7 @@ Single live view (terminal UI or minimal web page): left = rolling transcript, r
 - Real message broker (NATS) for multi-machine deployment
 - Multiple factory targets (Port action variants per product type)
 - Meeting-platform ingestion (Zoom/Meet bot) instead of local mic
+- `reachy` listen driver: real audio from the Reachy robot replaces the synthetic feed (same driver interface)
 
 ## Environment
 

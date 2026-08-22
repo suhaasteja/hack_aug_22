@@ -1,0 +1,23 @@
+# Pipeline configuration. Each module can be toggled independently;
+# main.py only starts modules with enabled: true.
+session:
+  # Speed multiplier for synthetic replay (2.0 = twice as fast as scripted)
+  replay_speed: 1.0
+
+modules:
+  listen:
+    enabled: false             # Stage 1
+    driver: synthetic          # synthetic | reachy (later) | mic (later)
+    script: app/modules/listen/data/sales_meeting.jsonl
+  web:
+    enabled: false             # Stage 1
+    host: 127.0.0.1
+    port: 7000
+  extract:
+    enabled: false             # Stage 2
+  prd:
+    enabled: false             # Stage 2
+  enrich:
+    enabled: false             # Stage 3
+  factory:
+    enabled: false             # Stage 4
