@@ -34,8 +34,37 @@ PRD_BLUEPRINT = "voc_prd"
 AGENT_BLUEPRINT = "voc_product_agent"
 PORT_AI_BLUEPRINT = "_ai_agent"
 
-# Read-only Port tools: spawned agents investigate the catalog, they don't mutate it.
-AGENT_TOOLS = ["^(list|get|search|track|describe)_.*"]
+# Every agent reads the catalog. Only roles that could plausibly own the build
+# also get the action that opens a pull request — a Port agent cannot write code
+# itself, so calling that action is how it delegates the implementation.
+READ_TOOLS = ["^(list|get|search|track|describe)_.*"]
+# Port exposes ONE generic tool for triggering actions — run_action, which takes
+# the action identifier as an argument. There is no per-action run_<name> tool,
+# so a regex naming the action matches nothing and the agent silently has no way
+# to act.
+SCAFFOLD_TOOL = "^run_action$"
+
+# Which role gets asked to build, in preference order. Whichever of these is
+# staffed first owns it; letting every role scaffold would open one repository
+# per agent for the same product.
+BUILDER_ROLE_ORDER = [
+    "backend-engineer",
+    "frontend-engineer",
+    "platform-sre",
+    "integrations-engineer",
+]
+
+
+def agent_capabilities(role: str) -> tuple[list[str], str]:
+    """Tools and execution mode for a role.
+
+    A builder runs unattended: under "Approval Required" it proposes the
+    scaffold action and waits for a human click, which stalls the build.
+    Advisory roles keep the approval gate, since nothing depends on them acting.
+    """
+    if role in BUILDER_ROLE_ORDER:
+        return [*READ_TOOLS, SCAFFOLD_TOOL], "Automatic"
+    return list(READ_TOOLS), "Approval Required"
 
 PROMPT_LIMIT = 5000  # Port's cap on _ai_agent prompt length
 
@@ -73,6 +102,26 @@ class CrewMember(BaseModel):
 
 class Crew(BaseModel):
     members: list[CrewMember]
+
+
+GATE_SYSTEM = """You decide whether a product requirements document has changed enough
+since it was last built to justify re-tasking an engineering agent.
+
+Re-tasking is expensive and rate limited, so hold unless the change is material.
+
+Material: a new or removed feature, a changed hard constraint, a reversed decision,
+a new integration or compliance requirement — anything that changes what should be
+built or how.
+
+Not material: wording, reordering, added detail on something already captured, a
+sharper summary, extra open questions.
+
+Say why in one sentence, in terms of what actually changed."""
+
+
+class GateDecision(BaseModel):
+    dispatch: bool
+    reason: str
 
 
 PRD_BLUEPRINT_SPEC = {
@@ -152,6 +201,40 @@ def agent_prompt(member: CrewMember, prd_title: str, prd_markdown: str) -> str:
     return f"{head}\n\nThe product requirements document:\n\n{doc}{tail}"
 
 
+def _shape(doc: dict[str, Any]) -> dict[str, Any]:
+    """The parts of a PRD that decide whether a rebuild is warranted."""
+    return {
+        "features": sorted(f["title"] for f in doc.get("features", [])),
+        "requirements": sorted(doc.get("requirements", [])),
+        "constraints": sorted(doc.get("constraints", [])),
+        "dropped": sorted(d["item"] for d in doc.get("out_of_scope", [])),
+    }
+
+
+def raw_delta(before: dict[str, Any] | None, after: dict[str, Any]) -> int:
+    """How many tracked items changed. A cheap floor before spending an LLM call."""
+    if before is None:
+        return sum(len(v) for v in after.values())
+    return sum(
+        len(set(after[k]) ^ set(before.get(k, []))) for k in after
+    )
+
+
+async def should_dispatch(
+    before: dict[str, Any] | None, after: dict[str, Any], config: dict[str, Any]
+) -> GateDecision:
+    if before is None:
+        return GateDecision(dispatch=True, reason="first build of this product")
+    return await generate_json(
+        prompt=(
+            f"Previously built from:\n{before}\n\nThe document now reads:\n{after}"
+        ),
+        schema=GateDecision,
+        system=GATE_SYSTEM,
+        config=config,
+    )
+
+
 async def derive_crew(doc: dict[str, Any], config: dict[str, Any]) -> Crew:
     dropped = "\n".join(f"- {d['item']}: {d['reason']}" for d in doc.get("out_of_scope", []))
     prompt = (
@@ -188,6 +271,16 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     session_id = config.get("session", {}).get("id", "session")
     prd_id = f"voc_prd_{session_id}"
 
+    gate = {
+        "built_shape": None,           # PRD shape as of the last dispatch
+        "dispatches": 0,
+        "last_rev": -99,
+        "min_delta": int(module_config.get("dispatch_min_delta", 2)),
+        "min_revs": int(module_config.get("dispatch_min_revs", 2)),
+        "after_rev": int(module_config.get("dispatch_after_rev", 3)),
+        "max": int(module_config.get("max_dispatches", 2)),
+        "enabled": bool(module_config.get("dispatch_builds", False)),
+    }
 
     try:
         async for event in bus.stream({EventType.PRD_UPDATED}):
@@ -204,8 +297,131 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
                 )
                 if stop:
                     return
+                if gate["enabled"]:
+                    await _maybe_dispatch_build(bus, port, config, event, crew, gate)
     finally:
         await port.aclose()
+
+
+async def _maybe_dispatch_build(
+    bus: EventBus,
+    port: PortClient,
+    config: dict[str, Any],
+    event: Event,
+    crew: dict[str, dict[str, Any]],
+    gate: dict[str, Any],
+) -> None:
+    """Ask an agent to build, but only once the document has really moved.
+
+    Every dispatch spends a Port agent invocation against a finite monthly
+    quota, so this refuses cheaply first — too few revisions since the last
+    build, too small a diff, cap reached — and only pays for a judgement call
+    on materiality once those pass.
+    """
+    rev = event.payload["rev"]
+    doc = event.payload["doc"]
+    shape = _shape(doc)
+
+    if gate["dispatches"] >= gate["max"]:
+        return
+    # A rev-1 PRD is a couple of bullet points; building from it wastes an
+    # invocation on a product that is about to change substantially.
+    if rev < gate["after_rev"]:
+        return
+    if rev - gate["last_rev"] < gate["min_revs"]:
+        return
+    delta = raw_delta(gate["built_shape"], shape)
+    if delta < gate["min_delta"]:
+        return
+
+    builder = next(
+        (r for r in BUILDER_ROLE_ORDER if crew.get(r, {}).get("status") == "active"), ""
+    )
+    if not builder:
+        return
+
+    with obs.span(
+        "factory.dispatch_gate", attributes={"voc.rev": rev, "voc.delta": delta}
+    ) as s:
+        try:
+            decision = await should_dispatch(gate["built_shape"], shape, config)
+        except Exception as e:  # noqa: BLE001 - holding is the safe default
+            obs.record_error("factory", "dispatch_gate", e)
+            return
+
+        s.set_attributes({"voc.dispatch": decision.dispatch, "voc.builder": builder})
+        if not decision.dispatch:
+            log.info("holding build at rev %d: %s", rev, decision.reason)
+            return
+
+        log.info("dispatching %s to build at rev %d: %s", builder, rev, decision.reason)
+        gate["dispatches"] += 1
+        gate["last_rev"] = rev
+        gate["built_shape"] = shape
+
+        instruction = (
+            f"The requirements for '{doc['title']}' have reached a point worth building. "
+            f"{decision.reason}\n\n"
+            "Use the run_action tool with actionIdentifier \"scaffold_service\" to "
+            "create the repository and open a pull request. Supply these inputs:\n"
+            f"- repo_name: {slug(doc['title'])[:40]}\n"
+            f"- role: {builder}\n"
+            "- summary: what the prototype must demonstrate, in your own words\n"
+            "- notes: the constraints it must respect, including anything the customer "
+            "explicitly ruled out\n\n"
+            f"Features: {[f['title'] for f in doc.get('features', [])]}\n"
+            f"Requirements: {doc.get('requirements', [])}\n"
+            f"Constraints: {doc.get('constraints', [])}\n"
+            f"Ruled out: {[d['item'] for d in doc.get('out_of_scope', [])]}"
+        )
+
+        try:
+            result = await port.invoke_agent(
+                crew[builder]["agent_id"],
+                instruction,
+                labels={"source": "voc-factory", "rev": str(rev)},
+            )
+        except Exception as e:  # noqa: BLE001
+            obs.record_error("factory", "dispatch_build", e)
+            log.warning("could not dispatch %s: %s", builder, e)
+            return
+
+        # The agent decided what to build and specified it. It cannot execute the
+        # action itself — Port AI agents run under an identity this workspace
+        # does not grant execute rights to — so the action is triggered on its
+        # behalf, carrying the agent's own words as the build spec.
+        try:
+            run_id = await port.trigger_action(
+                "scaffold_service",
+                {
+                    "repo_name": slug(doc["title"])[:40].replace("_", "-"),
+                    "summary": result["response"][:1500],
+                    "notes": (
+                        f"Constraints: {doc.get('constraints', [])}. "
+                        f"Explicitly ruled out: {[d['item'] for d in doc.get('out_of_scope', [])]}"
+                    )[:1500],
+                    "role": builder,
+                },
+            )
+            log.info("%s requested the build (port run %s)", builder, run_id)
+        except Exception as e:  # noqa: BLE001
+            obs.record_error("factory", "trigger_scaffold", e)
+            log.warning("could not trigger scaffold_service: %s", e)
+
+        await bus.publish(
+            Event(
+                type=EventType.LOOP_TRIGGERED,
+                payload={
+                    "stage": "answered",
+                    "alert": f"build requested at rev {rev}",
+                    "target_role": builder,
+                    "agent_id": crew[builder]["agent_id"],
+                    "response": result["response"],
+                    "invocation_id": result["invocation_id"],
+                },
+                trace_context=obs.inject(),
+            )
+        )
 
 
 async def _handle_revision(
@@ -265,6 +481,7 @@ async def _handle_revision(
         agent_id = f"voc_{slug(role)}_{session_id}"
         action = "updated" if previous else "spawned"
         prompt = agent_prompt(member, doc["title"], event.payload["markdown"])
+        tools, mode = agent_capabilities(role)
 
         with obs.span(
             f"factory.{action}",
@@ -280,9 +497,9 @@ async def _handle_revision(
                         "properties": {
                             "description": member.mission,
                             "status": "active",
-                            "tools": AGENT_TOOLS,
+                            "tools": tools,
                             "prompt": prompt,
-                            "execution_mode": "Approval Required",
+                            "execution_mode": mode,
                         },
                     },
                 )
@@ -311,6 +528,7 @@ async def _handle_revision(
         crew[role] = {
             "mission": member.mission,
             "status": "active",
+            "agent_id": agent_id,
             "spawned_at_rev": previous["spawned_at_rev"] if previous else rev,
             # Port validates required fields even on a merge write, so
             # deactivating later means resending the whole agent.
@@ -355,7 +573,7 @@ async def _handle_revision(
                         "properties": {
                             "status": "inactive",
                             "description": state["description"],
-                            "tools": AGENT_TOOLS,
+                            "tools": agent_capabilities(role)[0],
                             "prompt": state["prompt"],
                         },
                     },

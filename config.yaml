@@ -35,6 +35,18 @@ modules:
     max_queries: 4             # cap live searches per meeting
   factory:
     enabled: true
+    # Agents are invoked to build only when the PRD has materially moved. Each
+    # dispatch spends one of a finite monthly Port agent invocation quota.
+    dispatch_builds: true
+    dispatch_after_rev: 3      # let the PRD form before the first build
+    dispatch_min_revs: 2       # revisions to wait between builds
+    dispatch_min_delta: 2      # tracked PRD items that must change first
+    max_dispatches: 2          # per meeting
+  ship:
+    enabled: true
+    host: 0.0.0.0            # Port is SaaS and reaches this through a tunnel
+    port: 7002
+    max_builds: 3            # a repo per build; cap the blast radius
   loop:
     enabled: true
     # 0.0.0.0, not loopback: SigNoz runs in Docker and reaches the host via

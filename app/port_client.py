@@ -142,6 +142,24 @@ class PortClient:
             "finished": finished,
         }
 
+    async def trigger_action(
+        self, action: str, inputs: dict[str, Any]
+    ) -> str:
+        """Run a self-service action and return its run id.
+
+        Used when an agent has decided a build should happen but cannot execute
+        the action itself: Port AI agents run under an identity that this
+        workspace does not grant execute rights to, so the action is triggered
+        on the agent's behalf with the agent's own inputs. Port still runs the
+        action and delivers the webhook, so the factory stays in the path.
+        """
+        r = await self._request(
+            "POST", f"/actions/{action}/runs", json={"properties": inputs}
+        )
+        if r.status_code >= 400:
+            raise RuntimeError(f"action {action} failed: {r.status_code} {r.text[:300]}")
+        return r.json().get("run", {}).get("id", "")
+
     @staticmethod
     def entity_url(blueprint: str, identifier: str) -> str:
         return f"https://app.port.io/{blueprint}Entity?identifier={identifier}"

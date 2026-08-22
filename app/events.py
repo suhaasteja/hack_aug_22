@@ -23,6 +23,7 @@ class EventType(StrEnum):
     PIPELINE_STATUS = "pipeline.status"
     ALERT_RECEIVED = "alert.received"
     LOOP_TRIGGERED = "loop.triggered"
+    BUILD_SHIPPED = "build.shipped"
 
 
 @dataclass
