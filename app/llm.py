@@ -10,11 +10,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 from typing import Any, TypeVar
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
+
+from app import observability as obs
 
 log = logging.getLogger("llm")
 
@@ -53,26 +56,53 @@ async def generate_json(
 
     last: Exception | None = None
     for attempt in range(retries + 1):
-        try:
-            response = await client.aio.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=schema,
-                    system_instruction=system,
-                    automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                        disable=True
+        started = time.monotonic()
+        with obs.span(
+            f"llm.generate {schema.__name__}",
+            attributes={
+                "gen_ai.system": "gemini",
+                "gen_ai.request.model": model,
+                "gen_ai.response.schema": schema.__name__,
+                "llm.attempt": attempt,
+            },
+        ) as s:
+            try:
+                response = await client.aio.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=schema,
+                        system_instruction=system,
+                        automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                            disable=True
+                        ),
                     ),
-                ),
-            )
-            if response.parsed is None:
-                raise ValueError("model returned no parseable JSON")
-            return response.parsed
-        except Exception as e:  # noqa: BLE001 - retry any transient API/parse failure
-            last = e
-            if attempt < retries:
-                await asyncio.sleep(1.5 * (attempt + 1))
-                log.warning("generate retry %d/%d: %s", attempt + 1, retries, e)
+                )
+                if response.parsed is None:
+                    raise ValueError("model returned no parseable JSON")
+                if usage := getattr(response, "usage_metadata", None):
+                    s.set_attribute("gen_ai.usage.input_tokens", usage.prompt_token_count or 0)
+                    s.set_attribute("gen_ai.usage.output_tokens", usage.candidates_token_count or 0)
+                obs.observe(
+                    obs.llm_latency,
+                    (time.monotonic() - started) * 1000,
+                    model=model,
+                    schema=schema.__name__,
+                    outcome="ok",
+                )
+                return response.parsed
+            except Exception as e:  # noqa: BLE001 - retry any transient API/parse failure
+                last = e
+                obs.observe(
+                    obs.llm_latency,
+                    (time.monotonic() - started) * 1000,
+                    model=model,
+                    schema=schema.__name__,
+                    outcome="error",
+                )
+                if attempt < retries:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    log.warning("generate retry %d/%d: %s", attempt + 1, retries, e)
 
     raise RuntimeError(f"generation failed after {retries + 1} attempts: {last}") from last

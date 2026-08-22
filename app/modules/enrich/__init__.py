@@ -22,6 +22,7 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 from pydantic import BaseModel
 
+from app import observability as obs
 from app.bus import EventBus
 from app.events import Event, EventType
 from app.llm import LLMUnavailable, generate_json
@@ -106,7 +107,13 @@ async def research(idea: dict[str, Any], token: str, config: dict[str, Any]) -> 
     ).query
     log.info("searching: %s", query)
 
-    raw = await search(token, query)
+    with obs.span(
+        "brightdata.search",
+        attributes={"voc.search.query": query, "peer.service": "brightdata"},
+    ) as s:
+        raw = await search(token, query)
+        s.set_attribute("voc.search.response_bytes", len(raw))
+
     allowed = _extract_urls(raw)
 
     result = await generate_json(
@@ -148,21 +155,29 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
         seen_titles.append(idea["title"].lower())
         researched += 1
 
-        try:
-            findings = await research(idea, token, config)
-        except LLMUnavailable as e:
-            log.error("%s — enrich disabled for this session", e)
-            return
-        except Exception as e:  # noqa: BLE001 - research is best-effort; the PRD goes on without it
-            log.warning("research failed for '%s': %s", idea["title"], e)
-            continue
+        with obs.span(
+            "enrich.research",
+            parent=event.trace_context,
+            attributes={"voc.idea_id": idea["idea_id"], "voc.idea.kind": idea["kind"]},
+        ) as s:
+            try:
+                findings = await research(idea, token, config)
+            except LLMUnavailable as e:
+                log.error("%s — enrich disabled for this session", e)
+                return
+            except Exception as e:  # noqa: BLE001 - research is best-effort; the PRD goes on without it
+                obs.record_error("enrich", "research", e)
+                log.warning("research failed for '%s': %s", idea["title"], e)
+                continue
 
-        for f in findings:
-            log.info("found: %s (%s)", f.finding[:70], f.source)
-            await bus.publish(
-                Event(
-                    type=EventType.ENRICHMENT_FOUND,
-                    payload={**f.model_dump(), "idea_id": idea["idea_id"]},
-                    trace_context=event.trace_context,
+            s.set_attribute("voc.findings", len(findings))
+            for f in findings:
+                log.info("found: %s (%s)", f.finding[:70], f.source)
+                obs.count(obs.findings_counter, source=f.source)
+                await bus.publish(
+                    Event(
+                        type=EventType.ENRICHMENT_FOUND,
+                        payload={**f.model_dump(), "idea_id": idea["idea_id"]},
+                        trace_context=obs.inject(),
+                    )
                 )
-            )

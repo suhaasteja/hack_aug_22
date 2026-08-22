@@ -17,6 +17,7 @@ from typing import Any
 
 import yaml
 
+from app import observability
 from app.bus import EventBus
 
 log = logging.getLogger("main")
@@ -31,6 +32,7 @@ async def run(config_path: str = "config.yaml") -> None:
     # One id for the whole meeting. Modules key their external records off this
     # rather than off PRD content, which changes from revision to revision.
     config.setdefault("session", {})["id"] = f"m{int(time.time())}"
+    observability.setup(config)
     bus = EventBus()
 
     modules = {

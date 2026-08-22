@@ -22,6 +22,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app import observability as obs
 from app.bus import EventBus
 from app.events import Event, EventType
 from app.llm import LLMUnavailable, generate_json
@@ -187,166 +188,211 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     session_id = config.get("session", {}).get("id", "session")
     prd_id = f"voc_prd_{session_id}"
 
+
     try:
         async for event in bus.stream({EventType.PRD_UPDATED}):
-            rev = event.payload["rev"]
-            doc = event.payload["doc"]
+            with obs.span(
+                "factory.staff_crew",
+                parent=event.trace_context,
+                attributes={
+                    "voc.rev": event.payload["rev"],
+                    "voc.session_id": session_id,
+                },
+            ) as s:
+                stop = await _handle_revision(
+                    bus, port, config, event, crew, session_id, prd_id, s
+                )
+                if stop:
+                    return
+    finally:
+        await port.aclose()
 
+
+async def _handle_revision(
+    bus: EventBus,
+    port: PortClient,
+    config: dict[str, Any],
+    event: Event,
+    crew: dict[str, dict[str, Any]],
+    session_id: str,
+    prd_id: str,
+    span: Any,
+) -> bool:
+    """Reconcile the crew against one PRD revision. Returns True to stop the module."""
+    rev = event.payload["rev"]
+    doc = event.payload["doc"]
+
+    try:
+        await port.upsert_entity(
+            PRD_BLUEPRINT,
+            {
+                "identifier": prd_id,
+                "title": doc["title"],
+                "properties": {
+                    "summary": doc["summary"],
+                    "revision": rev,
+                    "markdown": event.payload["markdown"],
+                    "meeting_id": session_id,
+                    "feature_count": len(doc.get("features", [])),
+                    "requirement_count": len(doc.get("requirements", [])),
+                    "out_of_scope_count": len(doc.get("out_of_scope", [])),
+                },
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        obs.record_error("factory", "prd_upsert", e)
+        log.warning("PRD entity upsert failed at rev %d: %s", rev, e)
+        return False
+
+    try:
+        derived = await derive_crew(doc, config)
+    except LLMUnavailable as e:
+        log.error("%s — factory disabled for this session", e)
+        return True
+    except Exception as e:  # noqa: BLE001
+        obs.record_error("factory", "derive_crew", e)
+        log.warning("crew derivation failed at rev %d: %s", rev, e)
+        return False
+
+    required = {m.role: m for m in derived.members}
+    span.set_attribute("voc.crew.required", len(required))
+
+    for role, member in required.items():
+        previous = crew.get(role)
+        if previous and previous["mission"] == member.mission and previous["status"] == "active":
+            continue  # unchanged; don't churn Port
+
+        agent_id = f"voc_{slug(role)}_{session_id}"
+        action = "updated" if previous else "spawned"
+        prompt = agent_prompt(member, doc["title"], event.payload["markdown"])
+
+        with obs.span(
+            f"factory.{action}",
+            attributes={"voc.role": role, "voc.agent_id": agent_id, "voc.rev": rev},
+        ):
+            try:
+                # The real, invokable Port AI agent.
+                await port.upsert_entity(
+                    PORT_AI_BLUEPRINT,
+                    {
+                        "identifier": agent_id,
+                        "title": f"{role} — {doc['title'][:40]}",
+                        "properties": {
+                            "description": member.mission,
+                            "status": "active",
+                            "tools": AGENT_TOOLS,
+                            "prompt": prompt,
+                            "execution_mode": "Approval Required",
+                        },
+                    },
+                )
+                # Our record of why this agent exists and which PRD it serves.
+                await port.upsert_entity(
+                    AGENT_BLUEPRINT,
+                    {
+                        "identifier": agent_id,
+                        "title": role,
+                        "properties": {
+                            "role": role,
+                            "mission": member.mission,
+                            "justification": member.justification,
+                            "status": "active",
+                            "spawned_at_rev": previous["spawned_at_rev"] if previous else rev,
+                            "port_agent_id": agent_id,
+                        },
+                        "relations": {"prd": prd_id},
+                    },
+                )
+            except Exception as e:  # noqa: BLE001
+                obs.record_error("factory", f"agent_{action}", e)
+                log.warning("could not %s %s: %s", action, role, e)
+                continue
+
+        crew[role] = {
+            "mission": member.mission,
+            "status": "active",
+            "spawned_at_rev": previous["spawned_at_rev"] if previous else rev,
+            # Port validates required fields even on a merge write, so
+            # deactivating later means resending the whole agent.
+            "prompt": prompt,
+            "description": member.mission,
+        }
+        obs.count(obs.agents_counter, action=action, role=role)
+        log.info("%s %s (rev %d)", action, role, rev)
+        await bus.publish(
+            Event(
+                type=EventType.FACTORY_DISPATCHED,
+                payload={
+                    "action": action,
+                    "role": role,
+                    "mission": member.mission,
+                    "justification": member.justification,
+                    "agent_id": agent_id,
+                    "rev": rev,
+                    "url": PortClient.entity_url(AGENT_BLUEPRINT, agent_id),
+                },
+                trace_context=obs.inject(),
+            )
+        )
+
+    # Roles the PRD no longer justifies are retired, not deleted — the
+    # reversal that dropped them should stay visible in the catalog.
+    for role, state in list(crew.items()):
+        if role in required or state["status"] == "retired":
+            continue
+        agent_id = f"voc_{slug(role)}_{session_id}"
+        reason = f"No longer required by PRD revision {rev}"
+
+        with obs.span(
+            "factory.retired",
+            attributes={"voc.role": role, "voc.agent_id": agent_id, "voc.rev": rev},
+        ):
             try:
                 await port.upsert_entity(
-                    PRD_BLUEPRINT,
+                    PORT_AI_BLUEPRINT,
                     {
-                        "identifier": prd_id,
-                        "title": doc["title"],
+                        "identifier": agent_id,
                         "properties": {
-                            "summary": doc["summary"],
-                            "revision": rev,
-                            "markdown": event.payload["markdown"],
-                            "meeting_id": session_id,
-                            "feature_count": len(doc.get("features", [])),
-                            "requirement_count": len(doc.get("requirements", [])),
-                            "out_of_scope_count": len(doc.get("out_of_scope", [])),
+                            "status": "inactive",
+                            "description": state["description"],
+                            "tools": AGENT_TOOLS,
+                            "prompt": state["prompt"],
+                        },
+                    },
+                )
+                await port.upsert_entity(
+                    AGENT_BLUEPRINT,
+                    {
+                        "identifier": agent_id,
+                        "properties": {
+                            "status": "retired",
+                            "retired_at_rev": rev,
+                            "retire_reason": reason,
                         },
                     },
                 )
             except Exception as e:  # noqa: BLE001
-                log.warning("PRD entity upsert failed at rev %d: %s", rev, e)
+                obs.record_error("factory", "agent_retire", e)
+                log.warning("could not retire %s: %s", role, e)
                 continue
 
-            try:
-                derived = await derive_crew(doc, config)
-            except LLMUnavailable as e:
-                log.error("%s — factory disabled for this session", e)
-                return
-            except Exception as e:  # noqa: BLE001
-                log.warning("crew derivation failed at rev %d: %s", rev, e)
-                continue
+        state["status"] = "retired"
+        obs.count(obs.agents_counter, action="retired", role=role)
+        log.info("retired %s (rev %d)", role, rev)
+        await bus.publish(
+            Event(
+                type=EventType.FACTORY_DISPATCHED,
+                payload={
+                    "action": "retired",
+                    "role": role,
+                    "mission": state["mission"],
+                    "reason": reason,
+                    "agent_id": agent_id,
+                    "rev": rev,
+                    "url": PortClient.entity_url(AGENT_BLUEPRINT, agent_id),
+                },
+                trace_context=obs.inject(),
+            )
+        )
 
-            required = {m.role: m for m in derived.members}
-
-            for role, member in required.items():
-                previous = crew.get(role)
-                if previous and previous["mission"] == member.mission and previous["status"] == "active":
-                    continue  # unchanged; don't churn Port
-
-                agent_id = f"voc_{slug(role)}_{session_id}"
-                action = "updated" if previous else "spawned"
-                prompt = agent_prompt(member, doc["title"], event.payload["markdown"])
-
-                try:
-                    # The real, invokable Port AI agent.
-                    await port.upsert_entity(
-                        PORT_AI_BLUEPRINT,
-                        {
-                            "identifier": agent_id,
-                            "title": f"{role} — {doc['title'][:40]}",
-                            "properties": {
-                                "description": member.mission,
-                                "status": "active",
-                                "tools": AGENT_TOOLS,
-                                "prompt": prompt,
-                                "execution_mode": "Approval Required",
-                            },
-                        },
-                    )
-                    # Our record of why this agent exists and which PRD it serves.
-                    await port.upsert_entity(
-                        AGENT_BLUEPRINT,
-                        {
-                            "identifier": agent_id,
-                            "title": role,
-                            "properties": {
-                                "role": role,
-                                "mission": member.mission,
-                                "justification": member.justification,
-                                "status": "active",
-                                "spawned_at_rev": previous["spawned_at_rev"] if previous else rev,
-                                "port_agent_id": agent_id,
-                            },
-                            "relations": {"prd": prd_id},
-                        },
-                    )
-                except Exception as e:  # noqa: BLE001
-                    log.warning("could not %s %s: %s", action, role, e)
-                    continue
-
-                crew[role] = {
-                    "mission": member.mission,
-                    "status": "active",
-                    "spawned_at_rev": previous["spawned_at_rev"] if previous else rev,
-                    # Port validates required fields even on a merge write, so
-                    # deactivating later means resending the whole agent.
-                    "prompt": prompt,
-                    "description": member.mission,
-                }
-                log.info("%s %s (rev %d)", action, role, rev)
-                await bus.publish(
-                    Event(
-                        type=EventType.FACTORY_DISPATCHED,
-                        payload={
-                            "action": action,
-                            "role": role,
-                            "mission": member.mission,
-                            "justification": member.justification,
-                            "agent_id": agent_id,
-                            "rev": rev,
-                            "url": PortClient.entity_url(AGENT_BLUEPRINT, agent_id),
-                        },
-                        trace_context=event.trace_context,
-                    )
-                )
-
-            # Roles the PRD no longer justifies are retired, not deleted — the
-            # reversal that dropped them should stay visible in the catalog.
-            for role, state in list(crew.items()):
-                if role in required or state["status"] == "retired":
-                    continue
-                agent_id = f"voc_{slug(role)}_{session_id}"
-                reason = f"No longer required by PRD revision {rev}"
-                try:
-                    await port.upsert_entity(
-                        PORT_AI_BLUEPRINT,
-                        {
-                            "identifier": agent_id,
-                            "properties": {
-                                "status": "inactive",
-                                "description": state["description"],
-                                "tools": AGENT_TOOLS,
-                                "prompt": state["prompt"],
-                            },
-                        },
-                    )
-                    await port.upsert_entity(
-                        AGENT_BLUEPRINT,
-                        {
-                            "identifier": agent_id,
-                            "properties": {
-                                "status": "retired",
-                                "retired_at_rev": rev,
-                                "retire_reason": reason,
-                            },
-                        },
-                    )
-                except Exception as e:  # noqa: BLE001
-                    log.warning("could not retire %s: %s", role, e)
-                    continue
-
-                state["status"] = "retired"
-                log.info("retired %s (rev %d)", role, rev)
-                await bus.publish(
-                    Event(
-                        type=EventType.FACTORY_DISPATCHED,
-                        payload={
-                            "action": "retired",
-                            "role": role,
-                            "mission": state["mission"],
-                            "reason": reason,
-                            "agent_id": agent_id,
-                            "rev": rev,
-                            "url": PortClient.entity_url(AGENT_BLUEPRINT, agent_id),
-                        },
-                        trace_context=event.trace_context,
-                    )
-                )
-    finally:
-        await port.aclose()
+    return False

@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app import observability as obs
 from app.bus import EventBus
 from app.events import Event, EventType
 from app.llm import LLMUnavailable, generate_json
@@ -89,29 +90,48 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
             f"New excerpt from the call:\n{_render_window(window)}"
         )
 
-        try:
-            result = await generate_json(
-                prompt=prompt, schema=Extraction, system=SYSTEM, config=config
-            )
-        except LLMUnavailable as e:
-            log.error("%s — extract disabled for this session", e)
-            return
-        except Exception as e:  # noqa: BLE001 - a bad window must not kill the pipeline
-            log.warning("extraction failed on window ending at seg %d: %s", len(segments), e)
-            continue
-
-        for idea in result.ideas:
-            payload = idea.model_dump()
-            prior = known.get(idea.idea_id)
-            if prior == payload:
-                continue  # model restated something unchanged
-            known[idea.idea_id] = payload
-            verb = "updated" if prior else "new"
-            log.info("%s idea [%s/%s] %s", verb, idea.kind, idea.status, idea.title)
-            await bus.publish(
-                Event(
-                    type=EventType.IDEA_DETECTED,
-                    payload={**payload, "is_update": prior is not None},
-                    trace_context=event.trace_context,
+        with obs.span(
+            "extract.window",
+            parent=event.trace_context,
+            attributes={
+                "voc.window.size": len(window),
+                "voc.window.end_seq": len(segments) - 1,
+                "voc.known_ideas": len(known),
+            },
+        ) as s:
+            try:
+                result = await generate_json(
+                    prompt=prompt, schema=Extraction, system=SYSTEM, config=config
                 )
-            )
+            except LLMUnavailable as e:
+                log.error("%s — extract disabled for this session", e)
+                return
+            except Exception as e:  # noqa: BLE001 - a bad window must not kill the pipeline
+                obs.record_error("extract", "generate", e)
+                log.warning("extraction failed on window ending at seg %d: %s", len(segments), e)
+                continue
+
+            emitted = 0
+            for idea in result.ideas:
+                payload = idea.model_dump()
+                prior = known.get(idea.idea_id)
+                if prior == payload:
+                    continue  # model restated something unchanged
+                known[idea.idea_id] = payload
+                verb = "updated" if prior else "new"
+                emitted += 1
+                log.info("%s idea [%s/%s] %s", verb, idea.kind, idea.status, idea.title)
+                obs.count(
+                    obs.ideas_counter,
+                    kind=idea.kind,
+                    status=idea.status,
+                    is_update=prior is not None,
+                )
+                await bus.publish(
+                    Event(
+                        type=EventType.IDEA_DETECTED,
+                        payload={**payload, "is_update": prior is not None},
+                        trace_context=obs.inject(),
+                    )
+                )
+            s.set_attribute("voc.ideas.emitted", emitted)

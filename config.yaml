@@ -7,6 +7,13 @@ session:
 llm:
   model: gemini-3.7-flash
 
+observability:
+  enabled: true
+  endpoint: http://localhost:4317   # SigNoz OTLP collector
+  service_name: voc-factory
+  environment: hackathon
+  metric_interval_ms: 10000
+
 modules:
   listen:
     enabled: true

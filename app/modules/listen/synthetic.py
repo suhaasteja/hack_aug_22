@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app import observability as obs
 from app.bus import EventBus
 from app.events import TranscriptSegment
 
@@ -50,7 +51,18 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
                 session_id=session_id,
                 seq=seq,
             )
-            await bus.publish(segment.as_event())
+            # The span opened here is the root of the trace that the rest of the
+            # pipeline continues, so one utterance is followable end to end.
+            with obs.span(
+                "listen.segment",
+                attributes={
+                    "voc.session_id": session_id,
+                    "voc.segment.seq": seq,
+                    "voc.segment.speaker": segment.speaker,
+                },
+            ):
+                obs.count(obs.segments_counter, session_id=session_id)
+                await bus.publish(segment.as_event(trace_context=obs.inject()))
 
             f.write(json.dumps({"ts": time.time(), **entry, "seq": seq}) + "\n")
             f.flush()
