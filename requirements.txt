@@ -1,7 +1,7 @@
 pyyaml>=6.0
 fastapi>=0.115
 uvicorn[standard]>=0.32
-anthropic>=0.40
+google-genai>=2.19
 opentelemetry-sdk>=1.29
 opentelemetry-exporter-otlp>=1.29
 httpx>=0.27

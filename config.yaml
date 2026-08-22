@@ -4,6 +4,9 @@ session:
   # Speed multiplier for synthetic replay (2.0 = twice as fast as scripted)
   replay_speed: 1.0
 
+llm:
+  model: gemini-3.7-flash
+
 modules:
   listen:
     enabled: true
@@ -14,9 +17,12 @@ modules:
     host: 127.0.0.1
     port: 7000
   extract:
-    enabled: false             # Stage 2
+    enabled: true
+    window_size: 8             # segments of context per extraction
+    stride: 4                  # run an extraction every N segments
   prd:
-    enabled: false             # Stage 2
+    enabled: true
+    debounce_seconds: 2.5      # one revision per burst of ideas
   enrich:
     enabled: false             # Stage 3
   factory:

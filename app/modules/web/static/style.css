@@ -157,6 +157,33 @@ footer {
   animation: slide-in .3s ease-out;
 }
 .tick b { color: var(--accent); font-weight: 500; }
+.tick-ok { color: var(--accent); border-color: rgba(94, 234, 212, .3); }
+.tick-warn { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
+
+/* PRD */
+.prd-title { margin: 0 0 6px; font-size: 17px; color: var(--text); }
+.prd-summary { margin: 0 0 18px; color: var(--muted); }
+#prd h4 {
+  margin: 18px 0 7px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--accent);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+#prd ul { margin: 0; padding-left: 18px; }
+#prd li { margin-bottom: 7px; }
+#prd .prio {
+  font-size: 10px;
+  color: var(--muted);
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+#prd .dropped-h { color: var(--warn); }
+#prd .dropped li { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(251,191,36,.4); }
+#prd .dropped li b { text-decoration: none; color: var(--warn); }
 
 ::-webkit-scrollbar { width: 9px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
