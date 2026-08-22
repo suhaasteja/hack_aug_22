@@ -90,6 +90,51 @@ class PortClient:
             return []
         return r.json().get("entities", [])
 
+    async def invoke_agent(
+        self, agent_id: str, prompt: str, labels: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        """Invoke a Port AI agent and collect its streamed answer.
+
+        Port streams the run as server-sent events and finishes with `done`,
+        so the reply is available inline — no polling needed to know an agent
+        has finished and a follow-on can start.
+        """
+        headers = {**(await self._auth_header()), "Content-Type": "application/json"}
+        chunks: list[str] = []
+        invocation_id = ""
+        finished = False
+
+        async with self._http.stream(
+            "POST",
+            f"{API}/agent/{agent_id}/invoke",
+            headers=headers,
+            json={"prompt": prompt, "labels": labels or {}},
+            timeout=180.0,
+        ) as response:
+            if response.status_code >= 400:
+                body = (await response.aread()).decode()[:300]
+                raise RuntimeError(f"agent {agent_id} invoke failed: {response.status_code} {body}")
+
+            event_name = ""
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                elif line.startswith("data:"):
+                    data = line[5:].strip()
+                    if event_name == "execution":
+                        chunks.append(data)
+                    elif event_name == "invocationIdentifier":
+                        invocation_id = data
+                    elif event_name == "done":
+                        finished = True
+
+        return {
+            "agent_id": agent_id,
+            "invocation_id": invocation_id,
+            "response": "".join(chunks).strip(),
+            "finished": finished,
+        }
+
     @staticmethod
     def entity_url(blueprint: str, identifier: str) -> str:
         return f"https://app.port.io/{blueprint}Entity?identifier={identifier}"

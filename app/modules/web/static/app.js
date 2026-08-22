@@ -5,6 +5,9 @@ const $ = (id) => document.getElementById(id);
 
 const counts = { segments: 0, ideas: 0, revs: 0, sources: 0 };
 
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
 function bump(key, el) {
   counts[key] += 1;
   $(el).textContent = counts[key];
@@ -46,6 +49,45 @@ const handlers = {
     if (!p.is_update) bump('ideas', 'c-ideas');
     const verb = p.status === 'rejected' ? 'dropped' : p.is_update ? 'revised' : 'captured';
     tickDetail(`${verb}: ${p.title}`, p.status === 'rejected' ? 'warn' : 'ok');
+  },
+
+  'loop.triggered'(p) {
+    const pane = $('loop');
+    clearEmpty(pane);
+    const el = document.createElement('div');
+
+    if (p.stage === 'triaged') {
+      el.className = 'incident';
+      const head = document.createElement('div');
+      head.className = 'incident-head';
+      head.innerHTML = `<b>${escapeHtml(p.alert)}</b><span class="badge warn-badge">${escapeHtml(p.severity)}</span>`;
+      const body = document.createElement('div');
+      body.className = 'incident-body';
+      body.textContent = p.brief.summary;
+      const meta = document.createElement('div');
+      meta.className = 'incident-meta';
+      meta.textContent =
+        `→ ${p.target_role} · ${p.brief.confidence} confidence · ` +
+        `${p.evidence.logs} logs, ${p.evidence.spans} spans`;
+      const action = document.createElement('div');
+      action.className = 'incident-action';
+      action.textContent = p.brief.recommended_action;
+      el.append(head, body, meta, action);
+      tickDetail(`triaged: ${p.alert}`, 'warn');
+    } else {
+      el.className = 'incident answered';
+      const head = document.createElement('div');
+      head.className = 'incident-head';
+      head.innerHTML = `<b>${escapeHtml(p.target_role)} replied</b>`;
+      const body = document.createElement('div');
+      body.className = 'incident-body';
+      body.textContent = p.response;
+      el.append(head, body);
+      tickDetail(`agent answered: ${p.target_role}`, 'ok');
+    }
+
+    pane.append(el);
+    pane.scrollTop = pane.scrollHeight;
   },
 
   'factory.dispatched'(p) {

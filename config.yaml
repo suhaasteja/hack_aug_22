@@ -35,3 +35,24 @@ modules:
     max_queries: 4             # cap live searches per meeting
   factory:
     enabled: true
+  loop:
+    enabled: true
+    # 0.0.0.0, not loopback: SigNoz runs in Docker and reaches the host via
+    # host.docker.internal, which a 127.0.0.1 bind refuses.
+    host: 0.0.0.0
+    port: 7001               # SigNoz posts alerts here
+    signoz_url: http://localhost:8080
+    lookback_minutes: 15     # telemetry window pulled back for a brief
+    max_invocations: 6       # Port agent quota is finite; cap the session
+    cooldown_seconds: 120    # per role
+    dry_run: false
+    # role -> role invoked once the first finishes. A chain is skipped when
+    # its target is not staffed, since the crew changes with the PRD.
+    chain:
+      backend-engineer: security-compliance-engineer
+      integrations-engineer: backend-engineer
+      data-ml-engineer: backend-engineer
+
+# Fault injection for demonstrating the alert loop. 0.0 = off.
+chaos:
+  llm_fail_rate: 0.0

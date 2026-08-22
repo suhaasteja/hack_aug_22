@@ -160,6 +160,30 @@ footer {
 .tick-ok { color: var(--accent); border-color: rgba(94, 234, 212, .3); }
 .tick-warn { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
 
+/* agent loop incidents */
+.incident {
+  border: 1px solid rgba(251, 191, 36, .28);
+  border-left: 2px solid var(--warn);
+  border-radius: 7px;
+  padding: 9px 11px;
+  margin-bottom: 9px;
+  animation: slide-in .32s ease-out;
+  font-size: 12px;
+}
+.incident.answered { border-color: rgba(94, 234, 212, .28); border-left-color: var(--accent); }
+.incident-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.incident-head b { font-size: 12.5px; }
+.warn-badge { color: var(--warn); border-color: rgba(251,191,36,.35); }
+.incident-body { margin-top: 5px; color: var(--text); }
+.incident-meta { margin-top: 5px; font-size: 10.5px; color: var(--accent); }
+.incident-action {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* factory agents */
 .agent {
   border: 1px solid var(--line);

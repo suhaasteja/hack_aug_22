@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import time
 from typing import Any, TypeVar
 
@@ -54,8 +55,28 @@ async def generate_json(
     model = (config or {}).get("llm", {}).get("model", DEFAULT_MODEL)
     client = get_client()
 
+    # Fault injection, off unless chaos.llm_fail_rate is set. Every module
+    # generates through here, so this produces genuine failures — real error
+    # spans, real metrics, a real alert — rather than a faked one.
+    # target_schema narrows the blast radius to one module's call, so a demo
+    # can break enrichment without also breaking the PRD it feeds.
+    chaos = (config or {}).get("chaos", {})
+    target = chaos.get("target_schema")
+    fail_rate = (
+        float(chaos.get("llm_fail_rate", 0.0))
+        if not target or target == schema.__name__
+        else 0.0
+    )
+
     last: Exception | None = None
     for attempt in range(retries + 1):
+        if fail_rate and random.random() < fail_rate:
+            last = RuntimeError("injected fault: simulated Gemini API failure")
+            log.warning("chaos: failing generate for %s", schema.__name__)
+            if attempt < retries:
+                continue
+            raise RuntimeError(f"generation failed after {retries + 1} attempts: {last}") from last
+
         started = time.monotonic()
         with obs.span(
             f"llm.generate {schema.__name__}",

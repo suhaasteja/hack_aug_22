@@ -21,6 +21,8 @@ class EventType(StrEnum):
     ENRICHMENT_FOUND = "enrichment.found"
     FACTORY_DISPATCHED = "factory.dispatched"
     PIPELINE_STATUS = "pipeline.status"
+    ALERT_RECEIVED = "alert.received"
+    LOOP_TRIGGERED = "loop.triggered"
 
 
 @dataclass
