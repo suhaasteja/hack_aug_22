@@ -48,6 +48,40 @@ const handlers = {
     tickDetail(`${verb}: ${p.title}`, p.status === 'rejected' ? 'warn' : 'ok');
   },
 
+  'factory.dispatched'(p) {
+    const pane = $('factory');
+    clearEmpty(pane);
+    const existing = pane.querySelector(`[data-role="${p.role}"]`);
+    const el = existing || document.createElement('div');
+    el.dataset.role = p.role;
+    el.className = `agent ${p.action === 'retired' ? 'retired' : 'active'}`;
+
+    const why = p.action === 'retired' ? p.reason : (p.justification || []).join(' · ');
+    el.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'agent-head';
+    const name = document.createElement('b');
+    name.textContent = p.role;
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = p.action === 'retired' ? 'retired' : `rev ${p.rev}`;
+    head.append(name, badge);
+
+    const mission = document.createElement('div');
+    mission.className = 'agent-mission';
+    mission.textContent = p.mission;
+
+    const just = document.createElement('div');
+    just.className = 'agent-why';
+    just.textContent = why;
+
+    el.append(head, mission, just);
+    if (!existing) pane.append(el);
+
+    tickDetail(`${p.action}: ${p.role}`, p.action === 'retired' ? 'warn' : 'ok');
+    $('c-agents').textContent = pane.querySelectorAll('.agent.active').length;
+  },
+
   'enrichment.found'(p) {
     const pane = $('enrichment');
     clearEmpty(pane);

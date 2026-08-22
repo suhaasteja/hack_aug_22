@@ -27,4 +27,4 @@ modules:
     enabled: true
     max_queries: 4             # cap live searches per meeting
   factory:
-    enabled: false             # Stage 4
+    enabled: true

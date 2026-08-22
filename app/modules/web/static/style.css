@@ -160,6 +160,36 @@ footer {
 .tick-ok { color: var(--accent); border-color: rgba(94, 234, 212, .3); }
 .tick-warn { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
 
+/* factory agents */
+.agent {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 7px;
+  padding: 9px 11px;
+  margin-bottom: 9px;
+  animation: slide-in .32s ease-out;
+}
+.agent.retired {
+  border-left-color: var(--warn);
+  opacity: .5;
+}
+.agent-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.agent-head b { font-size: 12.5px; }
+.agent.retired .agent-head b { text-decoration: line-through; }
+.badge {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.agent.retired .badge { color: var(--warn); border-color: rgba(251,191,36,.35); }
+.agent-mission { font-size: 12px; color: var(--text); margin-top: 5px; }
+.agent-why { font-size: 10.5px; color: var(--muted); margin-top: 5px; font-style: italic; }
+
 /* enrichment findings */
 .finding {
   margin-bottom: 14px;

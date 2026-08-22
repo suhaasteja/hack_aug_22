@@ -11,6 +11,7 @@ import asyncio
 import importlib
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,9 @@ def load_config(path: str = "config.yaml") -> dict[str, Any]:
 
 async def run(config_path: str = "config.yaml") -> None:
     config = load_config(config_path)
+    # One id for the whole meeting. Modules key their external records off this
+    # rather than off PRD content, which changes from revision to revision.
+    config.setdefault("session", {})["id"] = f"m{int(time.time())}"
     bus = EventBus()
 
     modules = {
