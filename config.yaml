@@ -6,11 +6,11 @@ session:
 
 modules:
   listen:
-    enabled: false             # Stage 1
+    enabled: true
     driver: synthetic          # synthetic | reachy (later) | mic (later)
     script: app/modules/listen/data/sales_meeting.jsonl
   web:
-    enabled: false             # Stage 1
+    enabled: true
     host: 127.0.0.1
     port: 7000
   extract:

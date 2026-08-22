@@ -1,0 +1,29 @@
+{"t": 0.0, "speaker": "Dana (AE)", "text": "Thanks for making the time, Marcus. Before we get into the demo, I'd love to just hear how things are running on your side today."}
+{"t": 6.5, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Sure. So we move about eleven thousand shipments a month across forty carriers, and honestly the invoicing side of that is where we're bleeding."}
+{"t": 14.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Every carrier sends invoices in a different format. Some are EDI, some are PDFs, two of them still fax. My team manually reconciles those against the rate agreements."}
+{"t": 24.0, "speaker": "Dana (AE)", "text": "How many people are on that reconciliation today?"}
+{"t": 27.5, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Four full-time. And they still only spot-check maybe thirty percent of invoices. We know we're overpaying, we just can't prove which ones."}
+{"t": 36.0, "speaker": "Priya (Ops Manager)", "text": "The big one is accessorial charges. Detention, layover, fuel surcharges. Carriers add them and nobody catches it because checking one invoice takes twenty minutes."}
+{"t": 46.0, "speaker": "Dana (AE)", "text": "So if I'm hearing it right, the core need is automated freight invoice auditing that flags variance against contracted rates."}
+{"t": 53.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Exactly. Ingest any invoice format, compare it to the rate agreement, and tell me what's wrong before we pay it."}
+{"t": 61.0, "speaker": "Priya (Ops Manager)", "text": "And it can't just be a report. My team needs a queue — here are today's twelve disputed invoices, here's the evidence, click to file the dispute with the carrier."}
+{"t": 71.0, "speaker": "Dana (AE)", "text": "An exception workflow rather than a dashboard you have to go looking at."}
+{"t": 76.0, "speaker": "Priya (Ops Manager)", "text": "Right. If it's another dashboard nobody opens it. It has to come to us."}
+{"t": 82.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Put a mobile app on it too. I want to approve disputes from my phone when I'm at a terminal."}
+{"t": 90.0, "speaker": "Priya (Ops Manager)", "text": "Honestly Marcus, I'd push back on that. Nobody on my team is doing invoice work on a phone — they're on dual monitors in the office all day. Mobile would be wasted effort."}
+{"t": 100.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Fair. Scratch the mobile app then. Desktop web is fine, just make the approvals fast."}
+{"t": 107.0, "speaker": "Dana (AE)", "text": "Got it — desktop-first, no mobile in v1. What does this need to talk to on your stack?"}
+{"t": 114.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Everything settles in SAP. If it doesn't write back to SAP it's a non-starter, that's hard requirement number one."}
+{"t": 122.0, "speaker": "Priya (Ops Manager)", "text": "And our TMS is McLeod. The shipment data lives there — you'd need that to know what the invoice should have been."}
+{"t": 131.0, "speaker": "Dana (AE)", "text": "SAP write-back and a McLeod integration. Anything on the security side?"}
+{"t": 137.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "We're mid-market but two of our shippers are pharma, so SOC 2 Type II is table stakes. Procurement won't sign without it."}
+{"t": 146.0, "speaker": "Priya (Ops Manager)", "text": "One more thing — audit trail. If we dispute a charge and the carrier escalates, I need to show exactly what the system saw and when."}
+{"t": 156.0, "speaker": "Dana (AE)", "text": "Immutable audit log on every decision. Noted. How are you thinking about ROI on this?"}
+{"t": 163.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "Industry says three to five percent of freight spend is overbilled. We spend sixty million a year. Even catching half of that pays for a lot of software."}
+{"t": 173.0, "speaker": "Priya (Ops Manager)", "text": "But I'd want a pilot first. Two carriers, ninety days, show me you actually catch things we missed."}
+{"t": 182.0, "speaker": "Dana (AE)", "text": "A ninety-day pilot scoped to two carriers with a measurable recovery number at the end."}
+{"t": 189.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "That's the shape of it. What's pricing look like — is it per seat or percentage of recovery?"}
+{"t": 197.0, "speaker": "Dana (AE)", "text": "That's still open on our side, I'll bring options. Anything else that would make or break this?"}
+{"t": 204.0, "speaker": "Priya (Ops Manager)", "text": "It has to handle the fax ones. I know that's absurd in this decade, but two carriers aren't changing and they're eight percent of our volume."}
+{"t": 214.0, "speaker": "Marcus (VP Ops, Ridgeline Freight)", "text": "And speed. If an invoice takes a day to process we've already missed the payment window on some of these terms."}
+{"t": 222.0, "speaker": "Dana (AE)", "text": "Same-day processing, all formats including scanned and faxed documents. This is really helpful — let me put this in front of our product team."}
