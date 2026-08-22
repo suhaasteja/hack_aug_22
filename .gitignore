@@ -19,3 +19,6 @@ prd/history/
 .DS_Store
 .claude/
 prd/
+
+# generated builds are pushed to their own repos
+builds/
