@@ -8,6 +8,7 @@ from app.modules import listen
 from app.modules.listen.synthetic import load_script
 
 SCRIPT = "app/modules/listen/data/sales_meeting.jsonl"
+TICKETING = "app/modules/listen/data/ticketing_meeting.jsonl"
 
 
 def test_script_is_ordered_and_well_formed():
@@ -23,6 +24,14 @@ def test_script_covers_the_demo_arc():
     assert "scratch the mobile app" in text, "needs a reversal so the PRD must rewrite, not append"
     assert "soc 2" in text, "needs a hard constraint"
     assert "freight" in text, "needs a researchable market space for enrichment"
+
+
+def test_ticketing_script_covers_the_demo_arc():
+    """The second meeting must exercise the same beats in a different domain."""
+    text = " ".join(s["text"] for s in load_script(TICKETING)).lower()
+    assert "scrap dynamic pricing" in text, "needs a reversal so the PRD must rewrite"
+    assert "pci" in text, "needs a hard constraint"
+    assert "waiting room" in text, "needs a researchable market space"
 
 
 @pytest.mark.asyncio

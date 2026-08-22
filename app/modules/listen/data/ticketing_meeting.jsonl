@@ -1,0 +1,28 @@
+{"t": 0.0, "speaker": "Rafa (AE)", "text": "Thanks for the time. Before I show you anything, I'd rather hear what on-sale day actually looks like for you right now."}
+{"t": 7.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "On-sale day is the worst day of our month. We promote about four hundred shows a year, and when a big one drops we get forty thousand people hitting the site in the first ninety seconds."}
+{"t": 17.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "The site falls over. Not gracefully. It just dies, and then we're on Twitter apologising to fans while the artist's manager calls me."}
+{"t": 26.0, "speaker": "Rafa (AE)", "text": "What happens to the inventory in that window?"}
+{"t": 30.0, "speaker": "Nadia (VP Fan Experience)", "text": "That's the other half of it. Bots take roughly thirty percent of the good seats in the first minute. Those tickets are on resale sites at four times face value before real fans have loaded the page."}
+{"t": 42.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "We've tried rate limiting at the edge. It slows the bots down for about a week and then they adapt. We're not a security company, we can't keep playing that game."}
+{"t": 52.0, "speaker": "Rafa (AE)", "text": "So two problems: the traffic spike knocks you over, and the inventory gets taken by the wrong people."}
+{"t": 59.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "Right. And they're connected, because the bots are a big part of the spike."}
+{"t": 65.0, "speaker": "Nadia (VP Fan Experience)", "text": "What we want is a proper virtual waiting room. Everyone who arrives gets a place in line, they can see their position, and we let them through at a rate the checkout can actually handle."}
+{"t": 77.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "It has to hold the queue outside our infrastructure. If the queue itself runs on our servers it goes down with everything else, which defeats the point."}
+{"t": 87.0, "speaker": "Rafa (AE)", "text": "Understood. An edge-hosted queue, throttling admission into your checkout."}
+{"t": 94.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "And while we're in there, we should do dynamic pricing. If demand is that high we're leaving money on the table versus what the resale market is charging."}
+{"t": 105.0, "speaker": "Nadia (VP Fan Experience)", "text": "Tomas, no. We floated that with two artists last year and it nearly cost us the relationship. Their whole brand is that their shows are accessible. Dynamic pricing makes us look like the scalpers we're complaining about."}
+{"t": 118.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "Fair. Scrap dynamic pricing, it's not worth the goodwill. Face value stays face value."}
+{"t": 126.0, "speaker": "Nadia (VP Fan Experience)", "text": "What I do want is bot detection at the point of entry to the queue, not after checkout. By the time someone's at checkout it's too late, the seat is already held."}
+{"t": 138.0, "speaker": "Rafa (AE)", "text": "So bot mitigation at the door, and dynamic pricing is off the table. What does this need to talk to on your side?"}
+{"t": 147.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "Inventory and orders live in Tessitura. Anything that holds or releases a seat has to go through it, we're not building a second source of truth."}
+{"t": 157.0, "speaker": "Nadia (VP Fan Experience)", "text": "And payments are Stripe. We're PCI compliant today and I'd like to keep that scope exactly as small as it currently is."}
+{"t": 167.0, "speaker": "Rafa (AE)", "text": "Tessitura for inventory, Stripe for payment, no new cardholder data in scope. What about the fan-facing side?"}
+{"t": 176.0, "speaker": "Nadia (VP Fan Experience)", "text": "Mobile web, and it has to be genuinely good. Seventy percent of our traffic on an on-sale is someone on a phone on a train. If the queue page is heavy it fails them."}
+{"t": 188.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "And I need visibility while it's happening. During an on-sale I want to see queue depth, admission rate, and how many bots we're turning away, live. Not a report the next morning."}
+{"t": 200.0, "speaker": "Rafa (AE)", "text": "A live operations view for the on-sale itself. How would you judge whether this worked?"}
+{"t": 207.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "Zero downtime on an on-sale. That's the number. We had four outages last year and each one is a day of my life I don't get back."}
+{"t": 217.0, "speaker": "Nadia (VP Fan Experience)", "text": "And bots under five percent of inventory. If we can tell an artist that ninety-five percent of their seats went to actual fans, that changes the conversation."}
+{"t": 229.0, "speaker": "Rafa (AE)", "text": "Zero on-sale downtime, bots under five percent. Anything that would make or break this?"}
+{"t": 237.0, "speaker": "Tomas (CTO, Meridian Live)", "text": "We have an on-sale in six weeks that we cannot miss. Whatever we do has to be provable before then, even if it's one show."}
+{"t": 247.0, "speaker": "Nadia (VP Fan Experience)", "text": "And accessibility. We have a legal obligation on that and I'm not shipping a queue that a screen reader can't handle."}
+{"t": 256.0, "speaker": "Rafa (AE)", "text": "Six weeks with one show as the proof point, and accessibility is non-negotiable. This is really useful — let me take it back to our product team."}
