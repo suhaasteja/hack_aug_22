@@ -48,6 +48,24 @@ const handlers = {
     tickDetail(`${verb}: ${p.title}`, p.status === 'rejected' ? 'warn' : 'ok');
   },
 
+  'enrichment.found'(p) {
+    const pane = $('enrichment');
+    clearEmpty(pane);
+    const el = document.createElement('div');
+    el.className = 'finding';
+    const text = document.createElement('div');
+    text.textContent = p.finding;
+    const link = document.createElement('a');
+    link.href = p.url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = p.source;
+    el.append(text, link);
+    pane.append(el);
+    pane.scrollTop = pane.scrollHeight;
+    bump('sources', 'c-sources');
+  },
+
   'prd.updated'(p) {
     const pane = $('prd');
     clearEmpty(pane);

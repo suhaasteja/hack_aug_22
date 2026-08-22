@@ -160,6 +160,24 @@ footer {
 .tick-ok { color: var(--accent); border-color: rgba(94, 234, 212, .3); }
 .tick-warn { color: var(--warn); border-color: rgba(251, 191, 36, .3); }
 
+/* enrichment findings */
+.finding {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  animation: slide-in .32s ease-out;
+  font-size: 13px;
+}
+.finding:last-child { border-bottom: 0; }
+.finding a {
+  display: inline-block;
+  margin-top: 5px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+}
+.finding a:hover { text-decoration: underline; }
+
 /* PRD */
 .prd-title { margin: 0 0 6px; font-size: 17px; color: var(--text); }
 .prd-summary { margin: 0 0 18px; color: var(--muted); }

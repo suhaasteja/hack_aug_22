@@ -24,6 +24,7 @@ modules:
     enabled: true
     debounce_seconds: 2.5      # one revision per burst of ideas
   enrich:
-    enabled: false             # Stage 3
+    enabled: true
+    max_queries: 4             # cap live searches per meeting
   factory:
     enabled: false             # Stage 4
