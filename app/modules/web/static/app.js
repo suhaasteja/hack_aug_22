@@ -16,6 +16,7 @@ const STAGES = {
   'prd.updated': ['prd', 'prd'],
   'enrichment.found': ['research', 'research'],
   'factory.dispatched': ['factory', 'factory'],
+  'build.shipped': ['factory', 'factory'],
   'loop.triggered': ['loop', 'loop'],
   'alert.received': ['loop', 'loop'],
 };
@@ -121,6 +122,40 @@ const handlers = {
     pane.append(el);
     pane.scrollTop = pane.scrollHeight;
     bump('sources', 'c-sources');
+  },
+
+  'build.shipped'(p) {
+    const pane = $('factory');
+    clearEmpty(pane);
+    const existing = pane.querySelector(`[data-build="${p.repo}"]`);
+    const el = existing || document.createElement('div');
+    el.dataset.build = p.repo;
+    el.className = `build ${p.stage}`;
+
+    if (p.stage === 'shipped') {
+      el.innerHTML =
+        `<div class="build-head"><b>${esc(p.repo)}</b>` +
+        `<span class="badge ok-badge">shipped</span></div>` +
+        `<div class="build-summary">${esc(p.summary)}</div>` +
+        `<a href="${esc(p.pr_url)}" target="_blank" rel="noopener noreferrer">` +
+        `pull request \u2197</a>` +
+        `<a href="${esc(p.repo_url)}" target="_blank" rel="noopener noreferrer">` +
+        `repository \u2197</a>`;
+      tickDetail(`shipped: ${p.repo}`, 'ok');
+    } else if (p.stage === 'failed') {
+      el.innerHTML =
+        `<div class="build-head"><b>${esc(p.repo)}</b>` +
+        `<span class="badge warn-badge">failed</span></div>` +
+        `<div class="build-summary">${esc(p.error || '')}</div>`;
+      tickDetail(`build failed: ${p.repo}`, 'warn');
+    } else {
+      el.innerHTML =
+        `<div class="build-head"><b>${esc(p.repo)}</b>` +
+        `<span class="badge">building\u2026</span></div>` +
+        `<div class="build-summary">${esc(p.summary || '')}</div>`;
+      tickDetail(`building: ${p.repo}`, 'ok');
+    }
+    if (!existing) pane.prepend(el);
   },
 
   'factory.dispatched'(p) {
