@@ -1,145 +1,194 @@
 # Architecture
 
 A robot sits in a sales meeting. What people say becomes a living PRD, the PRD
-staffs a crew of AI agents in Port, and the whole pipeline watches itself — when
-something breaks, an agent is dispatched to deal with it.
+staffs a crew of AI agents in Port, an agent decides the product is ready and
+Port's factory builds it into a real repository — and the whole pipeline watches
+itself, dispatching an agent when something breaks.
 
 ## The pipeline
 
 ```
-        ┌──────────────────────────── SALES MEETING ────────────────────────────┐
-        │  "Every carrier sends invoices in a different format… some still fax" │
-        └───────────────────────────────────┬───────────────────────────────────┘
-                                            │ audio
-                                            ▼
-  ┌──────────┐  transcript.segment   ┌─────────────┐   idea.detected   ┌──────────────┐
-  │  LISTEN  │──────────────────────▶│   EXTRACT   │──────────────────▶│     PRD      │
-  │ driver:  │                       │  Gemini     │                   │  Gemini      │
-  │ synthetic│                       │  windowed   │◀──────────────────│  living doc  │
-  │ (reachy  │                       │  extraction │  enrichment.found │  rewrites,   │
-  │  later)  │                       └─────────────┘         │         │  never       │
-  └──────────┘                              │                │         │  appends     │
-                                            │ idea.detected  │         └──────┬───────┘
-                                            ▼                │                │
-                                    ┌───────────────┐        │                │ prd.updated
-                                    │    ENRICH     │────────┘                │
-                                    │  Bright Data  │                         ▼
-                                    │  live search  │                 ┌───────────────┐
-                                    │  + citation   │                 │    FACTORY    │
-                                    │    guard      │                 │  Gemini picks │
-                                    └───────────────┘                 │  the crew     │
-                                                                      └───────┬───────┘
-                                                                              │
-                                                     ┌────────────────────────┘
-                                                     ▼
-                                        ╔═══════════════════════╗
-                                        ║      PORT (live)      ║
-                                        ║  voc_prd     ← entity ║
-                                        ║  voc_product_agent ×N ║
-                                        ║  _ai_agent   ← real,  ║
-                                        ║     invokable agents  ║
-                                        ╚═══════════════════════╝
+        ┌──────────────────────── SALES MEETING ────────────────────────┐
+        │  "Scrap dynamic pricing, it's not worth the goodwill."         │
+        └───────────────────────────────┬───────────────────────────────┘
+                                        │ audio
+                                        ▼
+  ┌──────────┐ transcript.segment ┌───────────┐  idea.detected  ┌──────────────┐
+  │  LISTEN  │───────────────────▶│  EXTRACT  │────────────────▶│     PRD      │
+  │ driver:  │                    │  Gemini,  │                 │  regenerated │
+  │ synthetic│                    │  windowed │◀────────────────│  every rev — │
+  │ (reachy  │                    └─────┬─────┘ enrichment.found│  rewrites,   │
+  │  later)  │                          │                  │    │  never       │
+  └──────────┘                          │ idea.detected    │    │  appends     │
+                                        ▼                  │    └──────┬───────┘
+                                ┌───────────────┐          │           │
+                                │    ENRICH     │──────────┘           │ prd.updated
+                                │  Bright Data  │                      ▼
+                                │  live search  │              ┌───────────────┐
+                                │  + citation   │              │    FACTORY    │
+                                │    guard      │              │ Gemini staffs │
+                                └───────────────┘              │  the crew;    │
+                                                               │ diffs it each │
+                                                               │   revision    │
+                                                               └───┬───────┬───┘
+                                        ┌──────────────────────────┘       │
+                                        ▼                                  │
+                            ╔═══════════════════════╗                      │
+                            ║      PORT (live)      ║                      │
+                            ║  voc_prd              ║   DISPATCH GATE ─────┘
+                            ║  voc_product_agent ×N ║   material change?
+                            ║  _ai_agent  ← real,   ║          │
+                            ║    invokable agents   ║          ▼
+                            ║  voc_service          ║   builder agent
+                            ║  scaffold_service ────╫──▶ specifies the build
+                            ╚═══════════╤═══════════╝          │
+                                        │ webhook (ngrok)      │
+                                        ▼                      │
+                                ┌───────────────┐              │
+                                │     SHIP      │◀─────────────┘
+                                │ Gemini writes │
+                                │  the code     │
+                                └───────┬───────┘
+                                        ▼
+                            ┌───────────────────────────┐
+                            │  GitHub: repo + PR        │
+                            │  main = SPEC.md           │
+                            │  branch = implementation  │
+                            └───────────────────────────┘
 
   every module emits spans / metrics / logs
-  ─────────────────────────────────────────────────────────────────────────────▶
-                                        ╔═══════════════════════╗
-                                        ║    SIGNOZ (OTLP)      ║
-                                        ║  traces · logs        ║
-                                        ║  metrics · dashboard  ║
-                                        ║  alert rules          ║
-                                        ╚═══════╤═══════════════╝
-                                                │ alert fires (webhook)
-                                                ▼
-                                        ┌───────────────┐
-                                        │     LOOP      │
-                                        │ reads context │──┐
-                                        │ back from     │  │ Gemini triage brief
-                                        │ SigNoz        │  │ + picks owning role
-                                        └───────────────┘  │
-                                                │          │
-                                                ▼          ▼
-                                    invoke Port agent ─▶ chain next agent
-                                                │
-                                                └──────▶ back into PORT
+  ──────────────────────────────────────────────────────────────────────────▶
+                            ╔═══════════════════════╗
+                            ║    SIGNOZ (OTLP)      ║
+                            ║  traces · logs        ║
+                            ║  metrics · dashboard  ║
+                            ║  alert rules          ║
+                            ╚═══════════╤═══════════╝
+                                        │ alert fires → webhook :7001
+                                        ▼
+                                ┌───────────────┐
+                                │     LOOP      │  reads logs + spans back
+                                │ Gemini triage │  from SigNoz, picks the
+                                │  → invoke →   │  owning role, invokes it,
+                                │  chain next   │  chains a follow-on agent
+                                └───────┬───────┘
+                                        └──────────▶ back into PORT
 ```
 
-## Modules
+## Files by block
 
-Every module is independent: it consumes typed events from a shared async bus,
-publishes typed events back, and is toggled by one line in `config.yaml`. Adding
-a feature means adding a module that subscribes to events that already exist.
+### Core (the spine everything plugs into)
 
-| Module | Does | Consumes | Produces |
-|---|---|---|---|
-| `listen` | Driver-based transcript source (`synthetic` now, `reachy` later) | audio / script | `transcript.segment` |
-| `extract` | Gemini pulls ideas from sliding transcript windows | `transcript.segment` | `idea.detected` |
-| `prd` | Regenerates the whole PRD each revision, so reversals land in Out of Scope | `idea.detected`, `enrichment.found` | `prd.updated` |
-| `enrich` | Bright Data live search, citations validated against real results | `idea.detected` | `enrichment.found` |
-| `factory` | Gemini staffs a crew; diffs it against the last revision | `prd.updated` | `factory.dispatched` |
-| `loop` | SigNoz alert → context → triage → invoke agent → chain | `alert.received` (webhook) | `loop.triggered` |
-| `web` | Live dashboard at `:7000` | all events | — |
+| File | Does |
+|---|---|
+| `app/main.py` | Boots the bus, mints the meeting id, starts modules named in config |
+| `app/bus.py` | In-process async pub/sub. Bounded queues, drops rather than blocking |
+| `app/events.py` | Typed event contracts and `trace_context` that travels with each event |
+| `app/llm.py` | All Gemini access. Structured output only, retries, chaos injection |
+| `app/observability.py` | OTel traces/metrics/logs, trace propagation across the bus |
+| `app/port_client.py` | Port API: blueprints, entities, agent invocation, action triggering |
+| `app/signoz_client.py` | Reads logs and failing spans back out of SigNoz for the loop |
+| `config.yaml` | One line per module toggles it; all tuning lives here |
 
-## The two ideas that matter
+### LISTEN — the meeting
 
-**The PRD rewrites itself.** Extraction is fed the ideas it already knows, so
-when a customer reverses a request the model re-emits that idea as `rejected`
-rather than adding a near-duplicate. The PRD is regenerated from the whole idea
-set each revision, which is what lets a retracted feature move to Out of Scope
-instead of lingering as a requirement.
+| File | Does |
+|---|---|
+| `app/modules/listen/__init__.py` | Driver interface; fails loudly on an unimplemented driver |
+| `app/modules/listen/synthetic.py` | Replays a scripted meeting in real time, persists the transcript |
+| `.../data/sales_meeting.jsonl` | Freight invoice auditing, 29 utterances |
+| `.../data/ticketing_meeting.jsonl` | Ticket on-sale queue, 28 utterances |
 
-**The crew is derived, not fixed.** A freight-audit PRD and a scheduling PRD
-need different engineers, so Gemini picks which of seven roles a given PRD
-requires and writes each mission. Because the PRD is live, every revision
-produces a *team diff* — roles spawn when the PRD justifies them and retire
-when it stops, keeping the customer's reversal legible in the Port catalog.
+### EXTRACT + PRD — the document
 
-## Tracing
+| File | Does |
+|---|---|
+| `app/modules/extract/__init__.py` | Sliding window → ideas; fed known ideas so it revises rather than duplicates |
+| `app/modules/prd/__init__.py` | Regenerates the whole PRD each revision; renders markdown |
 
-Trace context travels on the event bus, so one utterance is followable end to
-end. A verified run:
+Writes `prd/PRD.md`, `prd/prd.json`, `prd/history/rev-NNN.md`.
 
-```
-listen.segment                      ← Marcus speaking
-└── extract.window
-    ├── llm.generate Extraction
-    └── prd.revision
-        ├── llm.generate PRDDoc
-        └── factory.staff_crew
-            ├── llm.generate Crew
-            └── factory.spawned ×4  ← Port agents
-```
+### ENRICH — market research
 
-One trace, 12.8 seconds, spoken sentence to staffed crew.
+| File | Does |
+|---|---|
+| `app/modules/enrich/__init__.py` | Bright Data over MCP; validates every citation against real search results |
 
-## The loop's context
+### FACTORY — the crew and the build decision
 
-An alert says a threshold moved; it does not say what to do. So the loop
-assembles what an agent actually needs before invoking one:
+| File | Does |
+|---|---|
+| `app/modules/factory/__init__.py` | Staffs the crew from the PRD, diffs it per revision, runs the dispatch gate, asks the builder agent to specify the build, triggers `scaffold_service` |
 
-- **what fired** — rule, severity, labels (module, operation, error type)
-- **what happened** — error logs and failing spans read back from SigNoz,
-  carrying the `voc.*` attributes that say which idea, revision or role was
-  being processed at the time
-- **what we're building** — the PRD as it currently stands, so the fix is
-  judged against the product rather than in the abstract
-- **who can act** — the live crew roster, since the crew changes with the PRD
+Key pieces inside it: `agent_capabilities()` (tools and execution mode per role),
+`_shape()` / `raw_delta()` / `should_dispatch()` (the gate),
+`_maybe_dispatch_build()` (the build decision), `_handle_revision()` (crew diff).
 
-Gemini turns that into a brief (summary, probable cause, impact, recommended
-action, owning role, confidence) and the owning role's Port agent is invoked
-with it. When that agent finishes, an optional follow-on role is invoked with
-the first agent's findings.
+### SHIP — the product
 
-Autonomous invocation needs brakes: the loop dedupes by alert fingerprint,
-enforces a per-role cooldown, and caps invocations per session. SigNoz
-re-notifies while an alert stays firing, so without the dedupe a single failure
-would invoke agents on every notification.
+| File | Does |
+|---|---|
+| `app/modules/ship/__init__.py` | Secret-protected `/scaffold` on :7002, Gemini codegen, `gh repo create`, branch, PR, registers `voc_service` in Port, closes the Port run |
 
-## Ports
+### LOOP — the closed feedback loop
+
+| File | Does |
+|---|---|
+| `app/modules/loop/__init__.py` | `/alert` on :7001, gathers context, Gemini triage, invokes the owning agent, chains a follow-on. Dedupe, cooldown, session cap |
+
+### WEB — the dashboard
+
+| File | Does |
+|---|---|
+| `app/modules/web/__init__.py` | WebSocket fan-out of the bus, replays history to late joiners |
+| `.../static/index.html` | Signal chain, five panes, counters, ticker |
+| `.../static/style.css` | All-monospace instrumentation aesthetic |
+| `.../static/app.js` | One handler per event type; stage and pane illumination |
+
+### Tests
+
+`tests/test_bus.py`, `test_module_loading.py`, `test_listen.py`, `test_prd.py`,
+`test_enrich.py`, `test_factory.py`, `test_loop.py`, `test_port_client.py` — 38 passing.
+
+### Docs
+
+`README.md` · `ARCHITECTURE.md` (this) · `DEMO.md` (3-minute runbook) ·
+`EXAMPLE.md` (a second meeting traced stage by stage) · `PLAN.md`
+
+## Ports and external services
 
 | Port | What |
 |---|---|
 | 7000 | Dashboard |
-| 7001 | Alert webhook (binds `0.0.0.0` — SigNoz-in-Docker can't reach loopback) |
+| 7001 | SigNoz alert webhook — binds `0.0.0.0`, SigNoz-in-Docker can't reach loopback |
+| 7002 | Scaffold webhook — reached by Port SaaS through an ngrok tunnel |
 | 8080 | SigNoz UI |
 | 4317 | OTLP ingest |
-| 8000 | SigNoz MCP |
+
+Env: `GEMINI_API_KEY`, `BRIGHTDATA_API_TOKEN`, `PORT_CLIENT_ID`,
+`PORT_CLIENT_SECRET`, `SIGNOZ_API_KEY`, `VOC_SHIP_TOKEN`.
+
+## Three things worth knowing
+
+**The PRD rewrites itself.** Extraction is fed the ideas it already knows, so a
+reversal comes back as the *same idea* marked rejected rather than a duplicate.
+The document is regenerated from the whole idea set each revision, which is what
+moves a retracted feature into Out of Scope instead of leaving it as a feature.
+
+**The crew is derived, not configured.** The freight PRD staffs a data/ML
+engineer and no SRE; the ticketing PRD staffs an SRE and no data/ML engineer.
+Same seven-role taxonomy, same code — the crew is read off the document.
+
+**Agent invocations are quota'd at 500/month**, so the dispatch gate refuses
+cheaply first (too few revisions since the last build, too small a diff, cap
+reached) and only pays for a judgement call on materiality once those pass.
+
+## Known limitation
+
+Port AI agents execute under an identity this workspace grants no execute rights
+to, so an agent cannot pull the trigger on `scaffold_service` itself — even with
+permissions opened, `ownedByTeam` cleared, `execution_mode: Automatic`, and the
+correct `run_action` tool. The agent therefore *specifies* the build and the
+factory triggers the same Port action on its behalf, carrying the agent's own
+words as the spec. Granting agent identities execute rights is a Port-side
+change and would close that last gap.
