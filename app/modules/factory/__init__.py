@@ -16,6 +16,8 @@ that records why it exists and which PRD it serves.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import re
 from typing import Any, Literal
@@ -320,7 +322,10 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
                 if gate["enabled"]:
                     await _maybe_dispatch_build(bus, port, config, event, crew, gate)
     finally:
-        await port.aclose()
+        # Shielded: this runs while the task is being cancelled, and a
+        # bare await there re-raises before the client is closed.
+        with contextlib.suppress(Exception):
+            await asyncio.shield(port.aclose())
 
 
 async def _maybe_dispatch_build(

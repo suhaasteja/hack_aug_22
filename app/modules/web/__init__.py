@@ -78,7 +78,7 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     port = int(module_config.get("port", 7100))
 
     server = uvicorn.Server(
-        uvicorn.Config(build_app(hub), host=host, port=port, log_level="warning")
+        uvicorn.Config(build_app(hub), host=host, port=port, log_level="warning", lifespan="off")
     )
     # The parent process owns Ctrl-C. uvicorn installs its own SIGINT
     # handler by default, which fights that and deadlocks shutdown.

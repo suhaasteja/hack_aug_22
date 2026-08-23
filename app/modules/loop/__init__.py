@@ -403,7 +403,7 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     port_num = int(module_config.get("port", 7001))
 
     server = uvicorn.Server(
-        uvicorn.Config(build_app(loop, bus), host=host, port=port_num, log_level="warning")
+        uvicorn.Config(build_app(loop, bus), host=host, port=port_num, log_level="warning", lifespan="off")
     )
     # The parent process owns Ctrl-C. uvicorn installs its own SIGINT
     # handler by default, which fights that and deadlocks shutdown.
@@ -420,6 +420,8 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
         server.should_exit = True
         with contextlib.suppress(asyncio.CancelledError):
             await serving
-        await port.aclose()
+        with contextlib.suppress(Exception):
+            await asyncio.shield(port.aclose())
         if signoz:
-            await signoz.aclose()
+            with contextlib.suppress(Exception):
+                await asyncio.shield(signoz.aclose())
