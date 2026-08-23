@@ -75,7 +75,7 @@ def build_app(hub: Hub) -> FastAPI:
 async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, Any]) -> None:
     hub = Hub()
     host = module_config.get("host", "127.0.0.1")
-    port = int(module_config.get("port", 7000))
+    port = int(module_config.get("port", 7100))
 
     server = uvicorn.Server(
         uvicorn.Config(build_app(hub), host=host, port=port, log_level="warning")

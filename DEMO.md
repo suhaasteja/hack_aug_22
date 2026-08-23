@@ -17,7 +17,7 @@ Open two tabs:
 
 | Tab | URL |
 |---|---|
-| Dashboard | http://localhost:7000 |
+| Dashboard | http://localhost:7100 |
 | SigNoz | http://localhost:8080 |
 
 Optionally a third on Port for the catalog: https://app.port.io

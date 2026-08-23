@@ -26,7 +26,9 @@ modules:
   web:
     enabled: true
     host: 127.0.0.1
-    port: 7000
+    # Not 7000: macOS ControlCenter (AirPlay Receiver) binds that port and
+    # silently intercepts the dashboard.
+    port: 7100
   extract:
     enabled: true
     window_size: 8             # segments of context per extraction

@@ -35,7 +35,7 @@ session:
 ```
 
 ```bash
-make run      # then open http://localhost:7000
+make run      # then open http://localhost:7100
 ```
 
 Expect the whole thing to settle about 90 seconds after the replay ends —

@@ -159,7 +159,7 @@ Key pieces inside it: `agent_capabilities()` (tools and execution mode per role)
 
 | Port | What |
 |---|---|
-| 7000 | Dashboard |
+| 7100 | Dashboard (not 7000: macOS AirPlay owns it) |
 | 7001 | SigNoz alert webhook — binds `0.0.0.0`, SigNoz-in-Docker can't reach loopback |
 | 7002 | Scaffold webhook — reached by Port SaaS through an ngrok tunnel |
 | 8080 | SigNoz UI |

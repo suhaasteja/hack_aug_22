@@ -44,7 +44,7 @@ make run
 python scripts/fake_robot.py app/modules/listen/data/ticketing_meeting.jsonl --speed 4
 ```
 
-Watch http://localhost:7000. It should behave exactly as the synthetic replay
+Watch http://localhost:7100. It should behave exactly as the synthetic replay
 did, except extraction now fires on a clock rather than per-utterance.
 
 Useful flags:

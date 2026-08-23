@@ -29,7 +29,7 @@ to the agents it changed.
 
 ```bash
 make setup
-make run          # dashboard on http://localhost:7000
+make run          # dashboard on http://localhost:7100
 make test
 ```
 
