@@ -100,6 +100,9 @@ async def run(bus: EventBus, config: dict[str, Any], module_config: dict[str, An
     server = uvicorn.Server(
         uvicorn.Config(build_app(bus, state), host=host, port=port, log_level="warning")
     )
+    # The parent process owns Ctrl-C. uvicorn installs its own SIGINT
+    # handler by default, which fights that and deadlocks shutdown.
+    server.install_signal_handlers = lambda: None
     serving = asyncio.create_task(server.serve())
     log.info("listening for transcript on http://%s:%d/transcript", host, port)
 

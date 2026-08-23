@@ -19,7 +19,7 @@ modules:
     enabled: true
     # synthetic = scripted replay; http = what a real transcriber posts into.
     # Switch to http for the robot; nothing downstream changes.
-    driver: synthetic
+    driver: http
     script: app/modules/listen/data/sales_meeting.jsonl
     host: 0.0.0.0            # http driver only
     port: 7003               # http driver only

@@ -8,8 +8,10 @@ directory and a config block, nothing else.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import logging
+import signal
 import sys
 import time
 from pathlib import Path
@@ -53,12 +55,53 @@ async def run(config_path: str = "config.yaml") -> None:
         log.info("no modules enabled; idling (Ctrl-C to exit)")
         await asyncio.Event().wait()
 
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-    for t in done:
-        if t.exception():
-            log.error("module '%s' crashed", t.get_name(), exc_info=t.exception())
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        for t in done:
+            if not t.cancelled() and t.exception():
+                log.error("module '%s' crashed", t.get_name(), exc_info=t.exception())
+    finally:
+        # Cancelling is not enough: a task destroyed while still unwinding logs
+        # a scary traceback on Ctrl-C and leaves its server socket open. Wait
+        # for each one to actually finish cancelling.
+        for t in tasks:
+            t.cancel()
+        # Bounded: one module refusing to unwind must not hang the exit.
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True), timeout=5
+            )
+
+
+async def _serve(config_path: str) -> None:
+    """Run the pipeline until a signal asks it to stop.
+
+    Signals are handled on the loop rather than through KeyboardInterrupt:
+    the modules embed HTTP servers and sit in network calls, and relying on
+    the exception arriving at the right await is what made Ctrl-C hang.
+    """
+    loop = asyncio.get_running_loop()
+    stop = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        with contextlib.suppress(NotImplementedError):
+            loop.add_signal_handler(sig, stop.set)
+
+    pipeline = asyncio.create_task(run(config_path), name="pipeline")
+    waiter = asyncio.create_task(stop.wait(), name="signal")
+    done, pending = await asyncio.wait(
+        {pipeline, waiter}, return_when=asyncio.FIRST_COMPLETED
+    )
+
+    if waiter in done:
+        log.info("shutting down")
     for t in pending:
         t.cancel()
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            asyncio.gather(*pending, return_exceptions=True), timeout=6
+        )
+    if pipeline in done and not pipeline.cancelled() and pipeline.exception():
+        raise pipeline.exception()
 
 
 def main() -> None:
@@ -69,8 +112,10 @@ def main() -> None:
     )
     config_path = sys.argv[1] if len(sys.argv) > 1 else "config.yaml"
     try:
-        asyncio.run(run(config_path))
-    except KeyboardInterrupt:
+        asyncio.run(_serve(config_path))
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        # Ctrl-C is how this is meant to end. Exit 0 so `make run` does not
+        # report a failure for a normal shutdown.
         log.info("shutting down")
 
 
