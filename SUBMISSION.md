@@ -236,3 +236,142 @@ That repo needs to be public too if you link it.
 - [ ] Make `hack_aug_22` public (verified: no keys in the tree or git history)
 - [ ] Record the video
 - [ ] Optionally make the generated build repo public and link it
+
+---
+
+# Page 2 — sponsor tool feedback
+
+## How was your experience using Bright Data?
+
+**What worked well.** This was the fastest of the three to integrate — about ten
+minutes from nothing to real results. Connecting over the MCP server rather than
+the REST API meant we never had to configure a zone or learn an account-specific
+setup, and the standard Python MCP SDK talked to it without any special handling.
+
+Result quality genuinely surprised us. We're generating a search query from a
+live sales conversation, so the queries are messy and unrehearsed, and it still
+returned the actual market leaders unprompted — Queue-it, Queue-Fair, Imperva,
+DataDome and Radware for virtual waiting rooms, and Cass, Trimble and Intelligent
+Audit for freight audit. Not SEO filler. One result independently corroborated a
+number the customer had said out loud in the meeting, which was a genuinely
+delightful moment in testing.
+
+We also want to call out the security notice wrapped around returned content,
+explicitly framing it as untrusted. For anyone piping scraped content into an
+LLM that is exactly the right instinct, and we don't see it from other providers.
+
+**What could be improved.**
+
+1. **Long-lived SSE connections go quiet.** We initially held one connection open
+   for the length of a session, and it silently stopped producing results partway
+   through. No error — just nothing. We now open a fresh connection per query,
+   which works fine, but a note in the docs about connection lifetime, or a
+   keepalive, would have saved us a confusing half hour.
+2. **Results are JSON wrapped in prose.** Because the security notice surrounds
+   the payload, we string-search for the JSON boundaries rather than parsing
+   cleanly. A structured field alongside the wrapper would make programmatic
+   consumption more robust.
+3. **No per-call usage readout.** We cap searches per meeting to control cost,
+   but we're guessing. Returning credit or quota usage in the response — the way
+   Port does on agent invocation — would let us budget properly.
+
+---
+
+## How was your experience using Port?
+
+**What worked well.** The built-in `_ai_agent` blueprint was the single best
+primitive we used all hackathon. Creating an entity creates a genuinely invokable
+agent, which meant our "the PRD staffs its own engineering crew" idea went from
+concept to working in one sitting. Blueprints, entities and relations modelled our
+domain cleanly, and creating custom blueprints via the API was straightforward.
+
+Streaming an agent run over SSE and finishing with a `done` event was a good
+design choice — the reply arrives inline, so chaining one agent into the next
+needed no polling at all. And returning rate limit and monthly quota usage in the
+invoke response was genuinely useful; it's how we knew to build a gate that only
+invokes an agent when a document has materially changed.
+
+**What could be improved.** Three of these cost us real time, and we think they'd
+cost anyone else the same.
+
+1. **Action tool naming is misleading, and fails silently.** The docs show tools
+   like `^run__createJiraIssue$` and `^run_create_github_issue$`, which reads as
+   one tool per action. In fact there's a single generic **`run_action`** tool
+   taking the identifier as an argument. Our regex matched nothing — so the agent
+   had no way to act, while still *responding as though it would*. It kept saying
+   it would trigger the build and then didn't. Silent capability failure is the
+   worst kind to debug. **Suggestion:** warn or reject when a tools regex matches
+   zero available tools.
+
+2. **We could not get an AI agent to execute a self-service action.** We set
+   execute permissions for Admin and Member and our user, `requiredApproval:
+   false`, `ownedByTeam: false`, `execution_mode: Automatic`, and the correct
+   `run_action` tool. The agent still replied "contact your Port admin to grant
+   execute access to this action." We couldn't find a way to see or grant rights
+   to the *agent's own identity*. We worked around it by having the agent specify
+   the build and triggering the action on its behalf — but the demo we wanted was
+   the agent pulling the trigger itself. If there's a documented path here we'd
+   love to know it; if not, it feels like a gap for agentic use cases.
+
+3. **Action runs vanish rather than fail.** `POST /v1/actions/{id}/runs` returned
+   202 with a run id, but `GET /v1/actions/runs` came back empty and fetching that
+   id 404'd. We believe this was because our webhook backend had `agent: true`
+   with no Port agent registered — but the run disappearing entirely, rather than
+   appearing as failed with a reason, made it very hard to diagnose.
+
+4. **Minor:** Port is SaaS, so a webhook backend can't reach a local dev machine.
+   We used ngrok, which is fine, but a documented local-development path would
+   help (and a clearer note that `agent: true` requires the Port agent running).
+   Also, `_ai_agent` prompts cap at 5000 characters — reasonable, but we only
+   discovered it from a write error.
+
+---
+
+## How was your experience using SigNoz?
+
+**What worked well.** The Foundry install was the smoothest self-hosting
+experience of the event — one small `casting.yaml`, one `foundryctl cast`, and the
+whole stack was healthy in a couple of minutes, MCP server included. Nothing to
+debug.
+
+The MCP server deserves particular praise. Being able to query traces, metrics,
+alerts and docs conversationally *while building* meant we could verify
+instrumentation without leaving the editor, and it caught several problems early.
+The Query Builder v5 API was also clean to drive programmatically — our pipeline
+reads its own error logs and failing spans back out of SigNoz to build context for
+an automated agent, and that worked first try.
+
+Trace correlation across our async event bus worked exactly as hoped. We can point
+at a single spoken sentence and follow it through extraction, document generation
+and into agents being created — one trace, twelve seconds wide. That's the demo.
+
+**What could be improved / things that bit us.**
+
+1. **`increase()` reads zero for short-lived processes.** Our pipeline runs for a
+   few minutes per meeting. A burst of errors exports a single cumulative data
+   point, so `increase()` over the evaluation window is 0 and the alert never
+   fires. We switched to `latest` and it worked, but this took a while to work out
+   because the metric clearly *had* data. A docs note on short-lived processes, or
+   guidance on cumulative vs delta in this situation, would help a lot.
+
+2. **Alertmanager spends its one notification even when the receiver is down.**
+   Our webhook consumer wasn't running when an alert first fired. With renotify
+   off it never retried, and because the alert stayed continuously firing it never
+   re-fired either — so the webhook was never delivered at all. We had to delete
+   and recreate the rule to get a fresh notification. **Retry with backoff on
+   failed webhook delivery would be genuinely valuable**, and is probably the
+   single change we'd most like to see.
+
+3. **Schema versions are inconsistent between resources.** Alerts use
+   `v2alpha1`; dashboards rejected that and required `v6`. Both errors were clear
+   once hit, but we discovered the requirement by trial. The dashboard grid being
+   12 columns wide (not 24) was likewise found by error message.
+
+4. **Worth documenting:** SigNoz running in Docker cannot reach a webhook bound to
+   the host's loopback. Obvious in hindsight, but we lost time to it — a line in
+   the webhook docs pointing at `host.docker.internal` and reminding people to
+   bind `0.0.0.0` would save others the same detour.
+
+Overall: of the three tools, SigNoz was the one we spent the least time fighting
+and got the most demo value from. The trace waterfall is the thing that makes the
+whole project legible to someone seeing it for the first time.
